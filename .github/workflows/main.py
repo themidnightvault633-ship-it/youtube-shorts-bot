@@ -28,7 +28,7 @@ def generate_story():
     }
     """
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-3.8-flash',
         contents=prompt
     )
     text = response.text.strip()
@@ -50,7 +50,7 @@ def generate_images(character_prompt, scenes):
     for i, scene in enumerate(scenes):
         full_prompt = f"{character_prompt}, {scene}, cinematic lighting, seed {seed}"
         url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(full_prompt)}?width=1080&height=1920&nologo=true"
-
+        
         img_data = requests.get(url).content
         filename = f"scene_{i}.jpg"
         with open(filename, "wb") as f:
@@ -62,12 +62,12 @@ def create_video(image_files):
     print("🎬 Rendering Video with MoviePy...")
     audio = AudioFileClip("voiceover.mp3")
     duration_per_image = audio.duration / len(image_files)
-
+    
     clips = []
     for img in image_files:
         clip = ImageClip(img).set_duration(duration_per_image)
         clips.append(clip)
-
+        
     video = concatenate_videoclips(clips, method="compose")
     video = video.set_audio(audio)
     video.write_videofile("final_short.mp4", fps=24, codec="libx264", audio_codec="aac")
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     story = generate_story()
     with open("video_metadata.json", "w") as f:
         json.dump(story, f, indent=4)
-
+        
     asyncio.run(generate_voice(story["narration"]))
     img_list = generate_images(story["character_base"], story["scenes"])
     create_video(img_list)
