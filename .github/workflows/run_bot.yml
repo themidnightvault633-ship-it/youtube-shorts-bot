@@ -25,21 +25,25 @@ jobs:
       - name: Install Python Packages
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt || pip install -r $(find . -name "requirements.txt" | head -n 1)
 
       - name: Run Main Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          if [ -f "main.py" ]; then
-            python main.py
-          elif [ -f "youtube-shorts-bot/main.py" ]; then
-            cd youtube-shorts-bot
-            python main.py
+          # Automatically find where main.py is located and run it
+          SCRIPT_PATH=$(find . -name "main.py" | head -n 1)
+          if [ -z "$SCRIPT_PATH" ]; then
+            echo "Error: main.py not found anywhere!"
+            exit 1
           fi
+          DIR_PATH=$(dirname "$SCRIPT_PATH")
+          echo "Found main.py in $DIR_PATH. Running..."
+          cd "$DIR_PATH"
+          python main.py
 
       - name: Upload Generated Video Artifact
         uses: actions/upload-artifact@v4
         with:
           name: generated-short
-          path: final_short.mp4
+          path: **/final_short.mp4
