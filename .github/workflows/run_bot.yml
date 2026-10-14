@@ -30,7 +30,13 @@ jobs:
       - name: Run Main Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python main.py
+        run: |
+          if [ -f "main.py" ]; then
+            python main.py
+          elif [ -f "youtube-shorts-bot/main.py" ]; then
+            cd youtube-shorts-bot
+            python main.py
+          fi
 
       - name: Upload Generated Video Artifact
         uses: actions/upload-artifact@v4
