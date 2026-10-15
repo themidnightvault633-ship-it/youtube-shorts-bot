@@ -7,7 +7,7 @@ import asyncio
 import edge_tts
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 
-# Bulletproof API key configuration for GitHub Secrets
+# Setup API Key securely
 api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=api_key)
 
