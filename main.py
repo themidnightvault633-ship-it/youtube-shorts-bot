@@ -2,14 +2,13 @@ import os
 import json
 import random
 import requests
-import google.generativeai as genai
+from google import genai
 import asyncio
 import edge_tts
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 
-# Setup API Key securely
-api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=api_key)
+api_key = os.environ.get("GEMINI_API_KEY")
+client = genai.Client(api_key=api_key)
 
 def generate_story():
     print("🧠 Generating Suspense Story with Gemini...")
@@ -29,8 +28,10 @@ def generate_story():
       "narration": "Full 45-second script text divided into smooth sentences for voiceover."
     }
     """
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model='gemini-1.5-flash',
+        contents=prompt
+    )
     text = response.text.strip()
     if text.startswith("```json"):
         text = text[7:-3].strip()
