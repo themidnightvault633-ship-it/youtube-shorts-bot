@@ -10,7 +10,6 @@ from PIL import Image, ImageDraw
 from io import BytesIO
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 
-# Fix for newer Pillow versions with MoviePy < 2.0
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
 
@@ -25,12 +24,12 @@ def generate_story():
     {
       "title": "The Creepy 3:14 AM Rule You Should Never Break #shorts",
       "description": "Never look at your phone if you wake up at this exact time...",
-      "character_base": "A cinematic dark moody creepy thriller room, 3D Pixar animation style, dramatic volumetric lighting, 8k",
+      "character_base": "dark moody thriller animation style, volumetric lighting",
       "scenes": [
-        "First sentence scene description visually detailing the hook",
-        "Second sentence scene description showing the rising tension",
-        "Third sentence scene description showing the creepy twist",
-        "Final sentence scene description showing the cliffhanger"
+        "A person waking up in a dark room looking at a glowing phone screen at 3:14 AM",
+        "A creepy dark silhouette standing in the bedroom hallway shadows",
+        "Close up of a terrified face illuminated by a flickering phone light",
+        "A dark shadowy figure reaching out from inside a bedroom mirror"
       ],
       "narration": "Full 45-second script text divided into smooth sentences for voiceover."
     }
@@ -60,12 +59,12 @@ def generate_story():
     return {
         "title": "The 3:14 AM Mirror Rule You Must Never Break #shorts",
         "description": "If you wake up at 3:14 AM without an alarm, never look into a mirror...",
-        "character_base": "A cinematic dark moody creepy bedroom at night, 3D Pixar animation style, dramatic volumetric lighting, 8k",
+        "character_base": "dark moody creepy thriller animation style, volumetric lighting",
         "scenes": [
             "A person waking up suddenly in a dark bedroom looking at a glowing red digital clock showing 3:14 AM",
-            "The person walking slowly towards a vintage hallway mirror in the pitch dark shadows",
-            "A creepy shadowy reflection in the mirror smiling back while the person looks terrified",
-            "The bedroom door slowly creaking open by itself in the dark background"
+            "A person walking slowly towards a vintage hallway mirror in the pitch dark shadows",
+            "A creepy shadowy reflection in the mirror smiling back in a dark room",
+            "A dark bedroom door slowly creaking open by itself in the shadows"
         ],
         "narration": "If you ever wake up at exactly 3:14 AM without an alarm, do not move. According to an old internet rule, your mind is still half-trapped in the dream realm. Whatever you do, never look into a mirror during this minute. Because the reflection staring back at you won't be yours, and once it sees you looking, it knows how to take your place."
     }
@@ -75,45 +74,68 @@ async def generate_voice(text):
     communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
     await communicate.save("voiceover.mp3")
 
-def create_fallback_image(filename, index):
-    # Creates a guaranteed valid 1080x1920 dark atmospheric image if API fails
-    img = Image.new('RGB', (1080, 1920), color=(12, 12, 22))
+def create_fallback_image(filename):
+    img = Image.new('RGB', (1080, 1920), color=(10, 10, 18))
     draw = ImageDraw.Draw(img)
     for y in range(0, 1920, 4):
-        shade = int(12 + (y / 1920) * 35)
-        draw.line([(0, y), (1080, y)], fill=(shade, 10, shade + 15), width=4)
+        shade = int(10 + (y / 1920) * 25)
+        draw.line([(0, y), (1080, y)], fill=(shade, 10, shade + 12), width=4)
     img.save(filename, "JPEG")
 
 def generate_images(character_prompt, scenes):
     print("🎨 Generating 3D Visual Scenes...")
     image_files = []
-    seed = random.randint(1000, 99999)
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     for i, scene in enumerate(scenes):
         filename = f"scene_{i}.jpg"
-        full_prompt = f"{character_prompt}, {scene}, cinematic lighting"
-        url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(full_prompt)}?width=1080&height=1920&seed={seed+i}&nologo=true"
+        # Short, clean prompt so URL never breaks or times out
+        clean_prompt = f"{scene}, {character_prompt}, dark horror aesthetic, vertical wallpaper"
+        encoded_prompt = requests.utils.quote(clean_prompt[:250])
         
         valid_image = False
-        for attempt in range(3):
+        for attempt in range(5):
+            seed = random.randint(1000, 999999)
+            # Using flux model with unique seed per retry and timeout of 60s
+            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&seed={seed}&model=flux&nologo=true"
+            headers = {
+                "User-Agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/{random.randint(500,599)}.36"
+            }
             try:
-                res = requests.get(url, headers=headers, timeout=30)
-                if res.status_code == 200 and len(res.content) > 1000:
+                print(f"⏳ Downloading Scene {i+1} (Attempt {attempt+1})...")
+                res = requests.get(url, headers=headers, timeout=60)
+                if res.status_code == 200 and len(res.content) > 5000:
                     img = Image.open(BytesIO(res.content)).convert("RGB")
-                    img.save(filename, "JPEG")
+                    # Crop out bottom 60px just in case watermark appears, then resize back
+                    w, h = img.size
+                    img = img.crop((0, 0, w, h - 60)).resize((1080, 1920), Image.LANCZOS)
+                    img.save(filename, "JPEG", quality=95)
                     valid_image = True
-                    print(f"✅ Scene {i+1} downloaded successfully!")
+                    print(f"✅ Scene {i+1} generated successfully!")
                     break
+                else:
+                    print(f"⚠️ Empty or rate-limited response (status {res.status_code}, size {len(res.content)} bytes)")
             except Exception as e:
-                print(f"⚠️ Image {i+1} attempt {attempt+1} failed: {e}")
-            time.sleep(3)
+                print(f"⚠️ Image {i+1} attempt {attempt+1} error: {e}")
+            
+            # Wait before retrying so rate-limit resets
+            time.sleep(8)
             
         if not valid_image:
-            print(f"⚠️ Using fallback visual for scene {i+1}")
-            create_fallback_image(filename, i)
+            # If still blocked, copy previous valid scene instead of blank purple screen!
+            if len(image_files) > 0 and os.path.exists(image_files[-1]):
+                print(f"⚠️ Reusing previous scene with zoom effect for scene {i+1}")
+                prev_img = Image.open(image_files[-1])
+                # Slight zoom-in crop so it looks like a new camera angle!
+                w, h = prev_img.size
+                zoomed = prev_img.crop((int(w*0.08), int(h*0.08), int(w*0.92), int(h*0.92))).resize((1080, 1920), Image.LANCZOS)
+                zoomed.save(filename, "JPEG", quality=95)
+            else:
+                create_fallback_image(filename)
             
         image_files.append(filename)
+        # Cool-down delay between scenes to avoid server block
+        time.sleep(6)
+        
     return image_files
 
 def create_video(image_files):
