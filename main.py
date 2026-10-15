@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import time
 import requests
 from google import genai
 import asyncio
@@ -28,16 +29,42 @@ def generate_story():
       "narration": "Full 45-second script text divided into smooth sentences for voiceover."
     }
     """
-    response = client.models.generate_content(
-        model='gemini-3.8-flash',
-        contents=prompt
-    )
-    text = response.text.strip()
-    if text.startswith("```json"):
-        text = text[7:-3].strip()
-    elif text.startswith("```"):
-        text = text[3:-3].strip()
-    return json.loads(text)
+    
+    # Multiple models and retries to beat the 503 Server Busy error
+    models_to_try = ['gemini-3.8-flash', 'gemini-3.0-flash', 'gemini-2.5-pro']
+    
+    for attempt in range(5):
+        for model_name in models_to_try:
+            try:
+                print(f"Trying {model_name} (Attempt {attempt+1})...")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                text = response.text.strip()
+                if text.startswith("```json"):
+                    text = text[7:-3].strip()
+                elif text.startswith("```"):
+                    text = text[3:-3].strip()
+                return json.loads(text)
+            except Exception as e:
+                print(f"⚠️ {model_name} busy or unavailable: {e}")
+                time.sleep(4)
+                
+    # 100% Foolproof Fallback: Agar Google server bilkul down ho, toh bhi video banegi!
+    print("⚠️ Google API servers are overloaded right now. Using built-in viral backup story so pipeline never fails!")
+    return {
+        "title": "The 3:14 AM Mirror Rule You Must Never Break #shorts",
+        "description": "If you wake up at 3:14 AM without an alarm, never look into a mirror...",
+        "character_base": "A cinematic dark moody creepy bedroom at night, 3D Pixar animation style, dramatic volumetric lighting, 8k",
+        "scenes": [
+            "A person waking up suddenly in a dark bedroom looking at a glowing red digital clock showing 3:14 AM",
+            "The person walking slowly towards a vintage hallway mirror in the pitch dark shadows",
+            "A creepy shadowy reflection in the mirror smiling back while the person looks terrified",
+            "The bedroom door slowly creaking open by itself in the dark background"
+        ],
+        "narration": "If you ever wake up at exactly 3:14 AM without an alarm, do not move. According to an old internet rule, your mind is still half-trapped in the dream realm. Whatever you do, never look into a mirror during this minute. Because the reflection staring back at you won't be yours, and once it sees you looking, it knows how to take your place."
+    }
 
 async def generate_voice(text):
     print("🎙️ Generating US Voiceover...")
