@@ -2,6 +2,8 @@ name: Run YouTube Short Generator
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '30 1,13 * * *'
 
 jobs:
   build:
@@ -27,10 +29,17 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Main Script
+      - name: Generate Short Video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
+
+      - name: Upload to YouTube Automatically
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python upload_youtube.py
 
       - name: Upload Generated Video Artifact
         uses: actions/upload-artifact@v4
