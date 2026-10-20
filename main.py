@@ -90,7 +90,7 @@ def generate_multispiritual_script():
     ]
     """
     
-    models_to_try = ['gemini-3.8-flash', 'gemini-1.5-flash', 'gemini-2.5-flash']
+    models_to_try = ['gemini-1.5-flash', 'gemini-2.5-flash']
     
     for attempt in range(3):
         for model_name in models_to_try:
@@ -99,7 +99,7 @@ def generate_multispiritual_script():
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt,
-                    config=types.GenerateContentConfig(response_type="application/json")
+                    config=types.GenerateContentConfig(response_mime_type="application/json")
                 )
                 data = json.loads(response.text)
                 if not check_duplicate_story(data.get("title", "")):
@@ -107,7 +107,7 @@ def generate_multispiritual_script():
             except Exception as e:
                 print(f"⚠️ Error with {model_name}: {e}")
                 import time
-                time.sleep(2) # Thoda wait karke agla model try karega
+                time.sleep(2)
             
     return None
 
@@ -121,7 +121,7 @@ def create_video():
     print("🧠 Multi-Spiritual Autonomous Content Engine Running...")
     content = generate_multispiritual_script()
     if not content:
-        raise Exception("❌ Failed to generate script after multiple retries due to server load.")
+        raise Exception("❌ Failed to generate script after multiple retries.")
         
     print(f"🎬 Title: {content['title']}")
     print(f"📌 Theme: {content['theme']}")
