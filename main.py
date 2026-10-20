@@ -13,7 +13,7 @@ if not hasattr(Image, 'ANTIALIAS'):
 from google import genai
 from google.genai import types
 import edge_tts
-from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips
+from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips, TextClip
 
 HISTORY_FILE = "story_history.json"
 ANALYTICS_FILE = "performance_metrics.json"
