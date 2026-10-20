@@ -1,73 +1,163 @@
 import os
+import json
+import asyncio
+import random
 import requests
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from datetime import datetime
+from google import genai
+from google.genai import types
+import edge_tts
+from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_videoclips
 
-# --- Environment Variables (GitHub Secrets se uthayega) ---
-IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN")
-IG_USER_ID = os.getenv("IG_USER_ID")
+HISTORY_FILE = "story_history.json"
+ANALYTICS_FILE = "performance_metrics.json"
 
-# Content path (repository ke andar ek 'content' folder hoga jisme video/image aur caption honge)
-MEDIA_PATH = "content/video.mp4"  # Aapki video ya image ka path
-CAPTION = "Sanatan Sutra - Daily Wisdom 🙏✨ #SanatanSutra #Dharma"
+# All-In-One Spiritual Categories for Endless Variety
+SPIRITUAL_CATEGORIES = [
+    "Ramayan Untold Secrets & Divine Lessons",
+    "Mahabharat Hidden Truths & Warrior Tales",
+    "Lord Shiva & Rudra Mysteries",
+    "Ancient Mysterious Indian Temples & Miracles",
+    "Garuda Purana & Secrets of Afterlife & Karma",
+    "Sanatan Dharma & Vedic Science Wonders"
+]
 
+FESTIVALS = [
+    {"name": "Ram Navami", "date": "2026-04-06"},
+    {"name": "Diwali", "date": "2026-11-08"},
+    {"name": "Holi", "date": "2026-03-03"},
+    {"name": "Maha Shivratri", "date": "2026-02-15"}
+]
 
-def post_to_instagram():
-  print("Instagram par post karne ki koshish ki ja rahi hai...")
+def check_upcoming_festival():
+    today = datetime.now().date()
+    for fest in FESTIVALS:
+        fest_date = datetime.strptime(fest["date"], "%Y-%m-%d").date()
+        diff = (fest_date - today).days
+        if 0 <= diff <= 15:
+            return fest["name"], diff
+    return None, None
 
-  # Step 1: Media Container Create Karein (Aapki video/image ka public URL hona chahiye, jaise raw GitHub link ya hosted link)
-  # Note: GitHub Actions ke liye video ko kisi hosting ya cloud par upload karke uska public URL dena behtar hota hai.
-  media_url = os.getenv(
-      "MEDIA_PUBLIC_URL"
-  )  # Public URL yahan environment variable se aayega
+def check_duplicate_story(title):
+    history = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r") as f:
+                history = json.load(f)
+        except:
+            pass
+    if title in history:
+        return True
+    history.append(title)
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history[-100:], f) # Last 100 titles track honge taaki repeat na ho
+    return False
 
-  url = f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media"
-  payload = {
-      "media_type": "REELS",  # Agar reel hai toh REELS, image hai toh IMAGE
-      "video_url": media_url,
-      "caption": CAPTION,
-      "access_token": IG_ACCESS_TOKEN,
-  }
-
-  response = requests.post(url, data=payload)
-  result = response.json()
-
-  if "id" in result:
-    creation_id = result["id"]
-    print(f"Media container created successfully. ID: {creation_id}")
-
-    # Step 2: Container Publish Karein
-    publish_url = f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish"
-    publish_payload = {
-        "creation_id": creation_id,
-        "access_token": IG_ACCESS_TOKEN,
-    }
-    pub_response = requests.post(publish_url, data=publish_payload)
-    pub_result = pub_response.json()
-
-    if "id" in pub_result:
-      print(f"Instagram par Successfully Post ho gaya! Post ID: {pub_result['id']}")
+# Multi-Category Smart Script Generator
+def generate_multispiritual_script():
+    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    fest_name, days_left = check_upcoming_festival()
+    
+    if fest_name:
+        context_prompt = f"Trending Festival Special: The upcoming Hindu festival '{fest_name}' (Coming in {days_left} days). Spiritual significance, rituals, and deep devotion."
     else:
-      print(f"Publishing Error: {pub_result}")
-  else:
-    print(f"Container Error: {result}")
+        # Har baar alag category chunega
+        chosen_category = random.choice(SPIRITUAL_CATEGORIES)
+        context_prompt = f"Genre/Category: {chosen_category}. Pick an extremely gripping, emotional, and divine untold story or mystery from this category."
 
+    prompt = f"""
+    {context_prompt}
+    Act as a top-tier YouTube Shorts viral content creator specializing in Sanatan Dharma, Hindu Mythology, and Spiritual Mysteries.
+    Create a highly engaging script optimized for maximum audience retention and high CTR.
+    
+    Requirements:
+    1. A mind-blowing Hook in the first 2 seconds that grabs attention instantly.
+    2. Deeply emotional, fact-checked, and devotional storytelling.
+    3. Break the script into exactly 3 chronological scenes for visual transitions.
+    
+    Return ONLY a valid JSON object with these exact keys:
+    "title": "A viral catchy title with emojis and relevant hashtags like #shorts #mythology #viral",
+    "description": "Engaging description with high-search keywords and hashtags",
+    "thumbnail_text": "Short 3-4 words bold text for thumbnail hook",
+    "theme": "The core theme of this video",
+    "scenes": [
+      {{"text": "Hook and beginning part...", "image_prompt": "Cinematic epic visual description for scene 1"}},
+      {{"text": "Turning point or deep realization...", "image_prompt": "Cinematic epic visual description for scene 2"}},
+      {{"text": "Powerful conclusion and divine lesson...", "image_prompt": "Cinematic epic visual description for scene 3"}}
+    ]
+    """
+    
+    for _ in range(3):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json")
+            )
+            data = json.loads(response.text)
+            if not check_duplicate_story(data.get("title", "")):
+                return data
+        except Exception as e:
+            print(f"⚠️ AI generation error: {e}")
+            
+    return None
 
-def post_to_youtube():
-  print("YouTube par video upload ho rahi hai...")
-  # YouTube API credentials setup (OAuth2 ya client secrets ke zariye)
-  # Yeh GitHub Secrets mein stored credentials ka use karega
-  print("YouTube upload function ready hai.")
+async def generate_audio(scenes):
+    full_text = " ".join([scene["text"] for scene in scenes])
+    print("🎙️ Generating high-quality spiritual voiceover...")
+    communicate = edge_tts.Communicate(full_text, "hi-IN-MadhurNeural", rate="+0%", pitch="+0Hz")
+    await communicate.save("voiceover.mp3")
 
+def create_video():
+    print("🧠 Multi-Spiritual Autonomous Content Engine Running...")
+    content = generate_multispiritual_script()
+    if not content:
+        raise Exception("❌ Failed to generate script.")
+        
+    print(f"🎬 Title: {content['title']}")
+    print(f"📌 Theme: {content['theme']}")
+    
+    with open("video_metadata.json", "w") as f:
+        json.dump(content, f)
+        
+    asyncio.run(generate_audio(content["scenes"]))
+    
+    main_audio = AudioFileClip("voiceover.mp3")
+    total_duration = main_audio.duration
+    
+    scene_clips = []
+    scene_duration = total_duration / len(content["scenes"])
+    
+    for i, scene in enumerate(content["scenes"]):
+        print(f"🖼️ Rendering Scene {i+1} visual...")
+        img_prompt = f"Divine epic cinematic mythic art, {scene['image_prompt']}, 4k, vertical --ar 9:16"
+        encoded_prompt = requests.utils.quote(img_prompt)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
+        
+        img_path = f"scene_{i}.jpg"
+        img_data = requests.get(image_url).content
+        with open(img_path, "wb") as handler:
+            handler.write(img_data)
+            
+        img_clip = ImageClip(img_path).set_duration(scene_duration)
+        img_clip = img_clip.resize(lambda t: 1 + 0.04 * t)
+        
+        txt_clip = TextClip(
+            scene["text"], fontsize=38, color='white', font='Arial-Bold',
+            size=(950, None), method='caption', stroke_color='black', stroke_width=2
+        ).set_duration(scene_duration).set_position(('center', 'center'))
+        
+        composite_scene = CompositeVideoClip([img_clip, txt_clip])
+        scene_clips.append(composite_scene)
+        
+    print("🎞️ Stitching final master video...")
+    final_video = concatenate_videoclips(scene_clips, method="compose")
+    final_video = final_video.set_audio(main_audio)
+    
+    final_video.write_videofile(
+        "final_short.mp4", fps=30, codec="libx264", audio_codec="aac", bitrate="5000k"
+    )
+    print("✅ Multi-Spiritual Cinematic Short successfully created!")
 
 if __name__ == "__main__":
-  print("--- Sanatan Sutra Automation Started ---")
-  if IG_ACCESS_TOKEN and IG_USER_ID:
-    post_to_instagram()
-  else:
-    print(
-        "Instagram credentials missing in environment variables! Skipping"
-        " Instagram."
-    )
-
-  post_to_youtube()
+    create_video()
