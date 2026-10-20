@@ -170,7 +170,7 @@ Requirements:
 Return only valid JSON in this exact structure:
 
 {{
-  "title": "Hindi catchy title with emojis",
+  "title": "Hindi catchy title with emojis #shorts",
   "description": "Hindi SEO description with popular hashtags",
   "script": "Complete Hindi narration text",
   "hashtags": ["#SanatanDharma", "#HinduMythology", "#ViralShorts"],
@@ -511,3 +511,13 @@ if __name__ == "__main__":
     except Exception as error:
         logging.exception("Pipeline failed")
         print("\nERROR:", error)
+        # Fallback dummy metadata taaki upload script kabhi fail na ho
+        fallback_meta = {
+            "title": "Divine Spiritual Short #shorts",
+            "description": "Divine spiritual moments #shorts #devotional",
+            "hashtags": ["#shorts", "#bhakti"]
+        }
+        write_json(Path("video_metadata.json"), fallback_meta)
+        if not Path("final_short.mp4").exists() and Path("Spiritual_AI_Video/output/Episode_001/final_short.mp4").exists():
+            shutil.copy(Path("Spiritual_AI_Video/output/Episode_001/final_short.mp4"), Path("final_short.mp4"))
+        raise error
