@@ -4,6 +4,12 @@ import asyncio
 import random
 import requests
 from datetime import datetime
+from PIL import Image
+
+# Pillow compatibility fix for MoviePy
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 from google import genai
 from google.genai import types
 import edge_tts
@@ -50,10 +56,9 @@ def check_duplicate_story(title):
         return True
     history.append(title)
     with open(HISTORY_FILE, "w") as f:
-        json.dump(history[-100:], f) # Last 100 titles track honge taaki repeat na ho
+        json.dump(history[-100:], f)
     return False
 
-# Multi-Category Smart Script Generator
 def generate_multispiritual_script():
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
     fest_name, days_left = check_upcoming_festival()
@@ -61,7 +66,6 @@ def generate_multispiritual_script():
     if fest_name:
         context_prompt = f"Trending Festival Special: The upcoming Hindu festival '{fest_name}' (Coming in {days_left} days). Spiritual significance, rituals, and deep devotion."
     else:
-        # Har baar alag category chunega
         chosen_category = random.choice(SPIRITUAL_CATEGORIES)
         context_prompt = f"Genre/Category: {chosen_category}. Pick an extremely gripping, emotional, and divine untold story or mystery from this category."
 
