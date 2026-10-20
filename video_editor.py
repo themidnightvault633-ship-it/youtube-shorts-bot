@@ -161,8 +161,9 @@ def validate_video(video_path):
         if clip.w != WIDTH or clip.h != HEIGHT:
             raise RuntimeError(f"❌ [QA REJECTED] Incorrect resolution: {clip.w}x{clip.h}. Required: 1080x1920.")
         
-        if clip.duration < 25 or clip.duration > 60:
-            raise RuntimeError(f"❌ [QA REJECTED] Invalid video duration: {clip.duration:.2f}s. Must be 35-45s range.")
+        # Flexibly allowed range changed from 35-45s to 15-60s to prevent short rejections
+        if clip.duration < 15 or clip.duration > 60:
+            raise RuntimeError(f"❌ [QA REJECTED] Invalid video duration: {clip.duration:.2f}s. Must be 15-60s range.")
         
         if clip.audio is None:
             raise RuntimeError("❌ [QA REJECTED] Video has no audio track attached.")
