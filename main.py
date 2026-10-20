@@ -5,7 +5,7 @@ import random
 import time
 import requests
 from datetime import datetime
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # Pillow compatibility fix for MoviePy
 if not hasattr(Image, 'ANTIALIAS'):
@@ -91,7 +91,6 @@ def generate_multispiritual_script():
     ]
     """
     
-    # 503 Overload fix: Smart waiting between retries
     for attempt in range(1, 5):
         try:
             print(f"🔄 Trying model gemini-3.8-flash (Attempt {attempt})...")
@@ -106,9 +105,7 @@ def generate_multispiritual_script():
         except Exception as e:
             print(f"⚠️ Error on attempt {attempt}: {e}")
             if attempt < 4:
-                wait_time = attempt * 5  # 5 sec, 10 sec, 15 sec ka gap
-                print(f"⏳ Server busy. Waiting {wait_time} seconds before retrying...")
-                time.sleep(wait_time)
+                time.sleep(attempt * 5)
             
     return None
 
@@ -140,14 +137,32 @@ def create_video():
     
     for i, scene in enumerate(content["scenes"]):
         print(f"🖼️ Rendering Scene {i+1} visual...")
-        img_prompt = f"Divine epic cinematic mythic art, {scene['image_prompt']}, 4k, vertical --ar 9:16"
-        encoded_prompt = requests.utils.quote(img_prompt)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
-        
         img_path = f"scene_{i}.jpg"
-        img_data = requests.get(image_url).content
-        with open(img_path, "wb") as handler:
-            handler.write(img_data)
+        success = False
+        
+        try:
+            img_prompt = f"Divine epic cinematic mythic art, {scene['image_prompt']}, 4k, vertical --ar 9:16"
+            encoded_prompt = requests.utils.quote(img_prompt)
+            image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
+            
+            response = requests.get(image_url, timeout=25)
+            if response.status_code == 200 and len(response.content) > 1000:
+                with open(img_path, "wb") as handler:
+                    handler.write(response.content)
+                # Verify image can be opened via PIL
+                with Image.open(img_path) as test_img:
+                    test_img.verify()
+                success = True
+        except Exception as ex:
+            print(f"⚠️ Image download/verify warning for scene {i+1}: {ex}")
+            
+        # Fallback if image download failed or corrupted
+        if not success:
+            print(f"⚙️ Using fallback gradient background for Scene {i+1}...")
+            img = Image.new('RGB', (1080, 1920), color=(15, 10, 30))
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([50, 800, 1030, 1120], fill=(30, 20, 50))
+            img.save(img_path)
             
         img_clip = ImageClip(img_path).set_duration(scene_duration)
         img_clip = img_clip.resize(lambda t: 1 + 0.04 * t)
