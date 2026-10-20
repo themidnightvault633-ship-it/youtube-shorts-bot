@@ -22,6 +22,7 @@ from moviepy.editor import (
     CompositeVideoClip,
     concatenate_videoclips,
     VideoFileClip,
+    CompositeAudioClip,
 )
 
 # ==========================================================
@@ -45,8 +46,9 @@ VOICE = "hi-IN-MadhurNeural"
 MAX_SCENES = 5
 MAX_RETRIES = 3
 
-MUSIC_FILE = os.getenv("MUSIC_FILE", "")
-MUSIC_VOLUME = 0.12
+# Automatic background music detection if placed in root or path specified
+MUSIC_FILE = os.getenv("MUSIC_FILE", "bgm.mp3")
+MUSIC_VOLUME = 0.10
 
 BASE_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -70,11 +72,11 @@ client = genai.Client(api_key=API_KEY)
 # ==========================================================
 
 SPIRITUAL_CATEGORIES = [
-    "रामायण के अनकहे रहस्य और दिव्य शिक्षाएं",
-    "महाभारत के अनसुने सच और गुप्त योद्धा गाथाएं",
-    "भगवान शिव और रुद्र अवतार के रहस्य",
-    "प्राचीन रहस्यमयी भारतीय मंदिर और उनके चमत्कार",
-    "गरुड़ पुराण और परलोक, आत्मा तथा कर्म के रहस्य",
+    "रामायण के अनकहे रहस्य और भगवान राम के चमत्कार",
+    "महाभारत के अनसुने सच, श्राप और गुप्त योद्धा गाथाएं",
+    "भगवान शिव, रुद्र अवतार और कैलाश पर्वत के रहस्य",
+    "प्राचीन रहस्यमयी भारतीय मंदिर और उनके हैरान कर देने वाले चमत्कार",
+    "गरुड़ पुराण और परलोक, आत्मा तथा कर्म के भयानक सच",
     "सनातन धर्म, वेद और आधुनिक विज्ञान के अद्भुत आश्चर्य"
 ]
 
@@ -133,7 +135,7 @@ def commit_episode(episode_number, title, script):
     write_json(TRACKER_FILE, {"episode": episode_number + 1})
 
 # ==========================================================
-# AI SCRIPT GENERATION WITH FALLBACK
+# AI ULTRA-VIRAL SCRIPT GENERATION
 # ==========================================================
 
 def generate_content_script(episode_number):
@@ -142,46 +144,47 @@ def generate_content_script(episode_number):
 
     festival_focus = check_upcoming_festival()
     if festival_focus:
-        context_prompt = f"Trending Festival Special: {festival_focus}. Focus on deep devotion, spiritual rituals, and divine storytelling."
+        context_prompt = f"Trending Festival Special: {festival_focus}. Focus on mind-blowing devotion, secret rituals, and deeply emotional storytelling."
     else:
         chosen_category = random.choice(SPIRITUAL_CATEGORIES)
-        context_prompt = f"Genre / Category: {chosen_category}. Pick an extremely gripping, emotional, mysterious, and viral untold story from this category."
+        context_prompt = f"Genre / Category: {chosen_category}. Pick an extremely gripping, jaw-dropping, mysterious, and viral untold story from this category."
 
     prompt = f"""
-You are a top-tier Hindi devotional and spiritual short-video scriptwriter.
-Create a short viral vertical YouTube Short episode in pure Shuddh Hindi.
+You are an elite YouTube Shorts viral growth expert and master storyteller specializing in Sanatan Dharma and Hindu Mythology.
+Create a short, extremely high-retention vertical YouTube Short episode in pure, powerful Shuddh Hindi.
 
 Episode number: {episode_number}
 {context_prompt}
 
-Requirements:
-1. Write in natural, pure Shuddh Hindi using Devanagari script.
-2. Target duration: 35-45 seconds.
-3. Begin with a mind-blowing hook in the first 2 seconds.
-4. Create 4-5 visual scenes in chronological order.
+CRITICAL REQUIREMENTS FOR MAXIMUM VIRALITY:
+1. **The Hook (First 2 seconds):** Must start with a shocking, mind-blowing, or spine-chilling question/statement in Hindi. No boring introductions!
+2. **Storytelling:** Fast-paced, deeply emotional, mysterious, and captivating narrative in pure Devanagari Hindi. 
+3. **Target Duration:** 35 to 45 seconds total length.
+4. **Structure:** Exactly 4 to 5 chronological visual scenes.
+5. **Visual Prompts:** Detailed English prompts for 4K cinematic photorealistic imagery with dramatic lighting, Unreal Engine 5 aesthetic, vertical 9:16 aspect ratio.
 
 Return ONLY a valid JSON object in this exact structure:
 {{
-  "title": "Hindi catchy title with emojis #shorts",
-  "description": "Hindi SEO description with popular hashtags",
-  "script": "Complete Hindi narration text",
+  "title": "Viral catchy Hindi title with emojis #shorts",
+  "description": "High-SEO Hindi description with popular hashtags",
+  "script": "Complete continuous Hindi narration text",
   "hashtags": ["#SanatanDharma", "#HinduMythology", "#ViralShorts"],
   "scenes": [
     {{
-      "narration": "Hindi narration for scene 1",
-      "image_prompt": "Detailed English cinematic mythological visual prompt"
+      "narration": "Shocking hook or story part for scene 1 in pure Hindi",
+      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, dramatic divine lighting"
     }},
     {{
-      "narration": "Hindi narration for scene 2",
-      "image_prompt": "Detailed English cinematic mythological visual prompt"
+      "narration": "Continuation of the gripping story for scene 2 in Hindi",
+      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, epic atmosphere"
     }},
     {{
-      "narration": "Hindi narration for scene 3",
-      "image_prompt": "Detailed English cinematic mythological visual prompt"
+      "narration": "Climax or turning point for scene 3 in Hindi",
+      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, divine aura"
     }},
     {{
-      "narration": "Hindi narration for scene 4",
-      "image_prompt": "Detailed English cinematic mythological visual prompt"
+      "narration": "Powerful spiritual conclusion for scene 4 in Hindi",
+      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, emotional spiritual depth"
     }}
   ]
 }}
@@ -220,29 +223,28 @@ Return ONLY a valid JSON object in this exact structure:
             print(f"Script retry {attempt + 1}: {error}")
             time.sleep(2 * (attempt + 1))
 
-    # Fallback default script so pipeline never crashes!
-    print("⚠️ AI generation failed. Using default high-viral spiritual fallback script.")
+    # High-Impact Fallback Script
     return {
-        "title": "महादेव का यह रहस्य जानकर चौंक जाएंगे आप! 🕉️ #shorts #shiva",
-        "description": "जानिए भगवान शिव से जुड़ा एक अद्भुत और रहस्यमयी सत्य जो आपके रोंगटे खड़े कर देगा। #sanatan #mahadev",
-        "script": "क्या आप जानते हैं कि ब्रह्मांड के रचियता भगवान शिव का एक ऐसा रहस्य है जो आज भी वैज्ञानिकों के लिए पहेली बना हुआ है? काशी नगरी प्रलय के समय भी क्यों सुरक्षित रहती है? पौराणिक कथाओं के अनुसार, महादेव इसे अपने त्रिशूल पर धारण करते हैं। यह इस बात का प्रमाण है कि इस सृष्टि की हर एक सांस पर केवल महाकाल का नियंत्रण है। हर हर महादेव!",
-        "hashtags": ["#Mahadev", "#Shiva", "#SanatanDharma", "#ViralShorts"],
+        "title": "इस रहस्य को जानकर कांप उठेगी रूह! 🕉️ #shorts #mahadev",
+        "description": "जानिए महादेव से जुड़ा वो खौफनाक और चमत्कारी रहस्य जो आज भी विज्ञान की समझ से परे है। #sanatan #viral",
+        "script": "क्या आप जानते हैं कि कैलाश पर्वत पर आज भी एक ऐसी रहस्यमयी शक्ति मौजूद है जहाँ इंसानों का जाना नामुमकिन है? जो भी वहाँ गया, वह कभी वापस नहीं लौटा! वैज्ञानिकों का मानना है कि वहाँ समय खुद रुक जाता है। पौराणिक मान्यता है कि यह स्थान सीधे सीधे आदिदेव महादेव का निवास है, जहाँ प्रकृति भी बिना उनकी आज्ञा के पत्थर नहीं हिला सकती। हर हर महादेव!",
+        "hashtags": ["#Mahadev", "#Kailash", "#SanatanDharma", "#ViralShorts"],
         "scenes": [
             {
-                "narration": "क्या आप जानते हैं कि ब्रह्मांड के रचियता भगवान शिव का एक ऐसा रहस्य है जो आज भी वैज्ञानिकों के लिए पहेली बना हुआ है?",
-                "image_prompt": "Mystical cosmic aura around Lord Shiva, cinematic cinematic divine lighting, 4k vertical"
+                "narration": "क्या आप जानते हैं कि कैलाश पर्वत पर आज भी एक ऐसी रहस्यमयी शक्ति मौजूद है जहाँ इंसानों का जाना नामुमकिन है?",
+                "image_prompt": "Photorealistic majestic Mount Kailash under dark mystical stormy cosmic sky, cinematic lighting, 4k vertical 9:16"
             },
             {
-                "narration": "काशी नगरी प्रलय के समय भी क्यों सुरक्षित रहती है?",
-                "image_prompt": "Ancient divine city of Kashi glowing with celestial light at twilight, cinematic epic view"
+                "narration": "जो भी वहाँ गया, वह कभी वापस नहीं लौटा! वैज्ञानिकों का मानना है कि वहाँ समय खुद रुक जाता है.",
+                "image_prompt": "Eerie glowing mystical fog rolling over sacred snowy Himalayan peaks, cinematic dramatic atmosphere, vertical"
             },
             {
-                "narration": "पौराणिक कथाओं के अनुसार, महादेव इसे अपने त्रिशूल पर धारण करते हैं।",
-                "image_prompt": "Lord Shiva Trishul resting on cosmic mountains, powerful divine energy, vertical 9:16"
+                "narration": "पौराणिक मान्यता है कि यह स्थान सीधे सीधे आदिदेव महादेव का निवास है,",
+                "image_prompt": "Divine silhouette of Lord Shiva meditating on a glowing peak with divine cosmic light rays, 4k epic art"
             },
             {
-                "narration": "यह इस बात का प्रमाण है कि इस सृष्टि की हर एक सांस पर केवल महाकाल का नियंत्रण है। हर हर महादेव!",
-                "image_prompt": "Devotees meditating in front of a giant radiant Shiva lingam, divine spiritual atmosphere"
+                "narration": "जहाँ प्रकृति भी बिना उनकी आज्ञा के पत्तर नहीं हिला सकती। हर हर महादेव!",
+                "image_prompt": "Massive cosmic divine energy radiating from sacred mountain, breathtaking spiritual view, vertical"
             }
         ]
     }
@@ -255,22 +257,23 @@ async def generate_audio(text, output_path):
     communicate = edge_tts.Communicate(
         text=text,
         voice=VOICE,
-        rate="-3%",
+        rate="-2%",
         pitch="+0Hz",
     )
     await communicate.save(str(output_path))
 
 # ==========================================================
-# IMAGE GENERATION / DOWNLOAD
+# ULTRA-HD IMAGE DOWNLOADER
 # ==========================================================
 
 def download_scene_image(prompt, output_path):
-    encoded_prompt = requests.utils.quote(prompt)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
+    enhanced_prompt = f"{prompt}, highly detailed, cinematic lighting, 8k resolution, photorealistic, Unreal Engine 5 render, dramatic contrast"
+    encoded_prompt = requests.utils.quote(enhanced_prompt)
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true&enhance=true"
 
     for attempt in range(MAX_RETRIES):
         try:
-            response = requests.get(image_url, timeout=(15, 120), headers={"User-Agent": "SpiritualAIShorts/1.0"})
+            response = requests.get(image_url, timeout=(20, 150), headers={"User-Agent": "SpiritualAIShorts/1.0"})
             response.raise_for_status()
 
             if not response.headers.get("Content-Type", "").startswith("image/"):
@@ -296,16 +299,30 @@ def download_scene_image(prompt, output_path):
     return output_path
 
 # ==========================================================
-# IMAGE FORMATTING & OVERLAYS
+# AUTO FONT DOWNLOADER & HINDI OVERLAYS
 # ==========================================================
 
 def find_hindi_font():
+    local_font = Path("NotoSansDevanagari-Regular.ttf")
+    if local_font.exists():
+        return str(local_font)
+    
+    try:
+        print("📥 Downloading Noto Sans Devanagari font...")
+        font_url = "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari-Regular.ttf"
+        res = requests.get(font_url, timeout=15)
+        if res.status_code == 200:
+            with open(local_font, "wb") as f:
+                f.write(res.content)
+            return str(local_font)
+    except Exception as e:
+        print(f"⚠️ Font download warning: {e}")
+
     candidates = [
-        "NotoSansDevanagari-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
         "C:/Windows/Fonts/NirmalaB.ttf",
         "C:/Windows/Fonts/mangal.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     ]
     for candidate in candidates:
         if os.path.isfile(candidate):
@@ -328,7 +345,8 @@ def fit_vertical_image(image_path, episode_number):
     left = (new_width - WIDTH) // 2
     top = (new_height - HEIGHT) // 2
     image = image.crop((left, top, left + WIDTH, top + HEIGHT))
-    image = ImageEnhance.Contrast(image).enhance(1.08)
+    image = ImageEnhance.Contrast(image).enhance(1.12)
+    image = ImageEnhance.Color(image).enhance(1.05)
 
     draw = ImageDraw.Draw(image)
     font_path = find_hindi_font()
@@ -374,12 +392,13 @@ def wrap_hindi_text(draw, text, font, max_width):
 
 def create_subtitle_image(text, output_path):
     font_path = find_hindi_font()
-    if not font_path:
-        raise RuntimeError("Hindi font not found.")
-
     canvas = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
-    font = ImageFont.truetype(font_path, 56)
+    
+    if font_path:
+        font = ImageFont.truetype(font_path, 56)
+    else:
+        font = ImageFont.load_default()
 
     lines = wrap_hindi_text(draw, text, font, max_width=920)
     line_height = 80
@@ -398,7 +417,7 @@ def create_subtitle_image(text, output_path):
     return output_path
 
 # ==========================================================
-# VIDEO RENDERING
+# VIDEO RENDERING & BGM MIXING
 # ==========================================================
 
 def render_video(content, episode_dir, episode_number):
@@ -439,16 +458,22 @@ def render_video(content, episode_dir, episode_number):
 
         video = CompositeVideoClip([background_video, subtitle_video], size=(WIDTH, HEIGHT)).set_audio(audio)
 
-        music_clip = None
+        # Smart Background Music Mixing
+        final_audio = audio
         if MUSIC_FILE and Path(MUSIC_FILE).is_file():
-            from moviepy.editor import CompositeAudioClip
-            music_clip = AudioFileClip(MUSIC_FILE)
-            if music_clip.duration < total_duration:
-                music_clip = music_clip.audio_loop(duration=total_duration)
-            else:
-                music_clip = music_clip.subclip(0, total_duration)
-            music_clip = music_clip.volumex(MUSIC_VOLUME)
-            video = video.set_audio(CompositeAudioClip([audio, music_clip]))
+            try:
+                music_clip = AudioFileClip(MUSIC_FILE)
+                if music_clip.duration < total_duration:
+                    music_clip = music_clip.audio_loop(duration=total_duration)
+                else:
+                    music_clip = music_clip.subclip(0, total_duration)
+                music_clip = music_clip.volumex(MUSIC_VOLUME)
+                final_audio = CompositeAudioClip([audio, music_clip])
+                print("🎵 Background music successfully blended with voiceover!")
+            except Exception as bgm_err:
+                print(f"⚠️ BGM loading warning: {bgm_err}")
+
+        video = video.set_audio(final_audio)
 
         video.write_videofile(
             str(final_path),
@@ -464,8 +489,6 @@ def render_video(content, episode_dir, episode_number):
         video.close()
         background_video.close()
         subtitle_video.close()
-        if music_clip:
-            music_clip.close()
 
         return final_path
 
@@ -526,7 +549,6 @@ def create_video():
 
     write_json(episode_dir / "video_metadata.json", metadata)
     
-    # ROOT FOLDER COPY FIX FOR YOUTUBE UPLOAD SCRIPT
     shutil.copy(final_video, Path("final_short.mp4"))
     write_json(Path("video_metadata.json"), metadata)
 
@@ -538,14 +560,12 @@ if __name__ == "__main__":
     except Exception as error:
         logging.exception("Pipeline failed")
         print("\nERROR:", error)
-        # Fallback dummy metadata and video taaki upload script kabhi fail na ho
         fallback_meta = {
-            "title": "महादेव का अद्भुत रहस्य 🕉️ #shorts",
-            "description": "जानिए भगवान शिव से जुड़ा एक रहस्यमय सत्य। #sanatan #mahadev #shorts",
+            "title": "इस रहस्य को जानकर कांप उठेगी रूह! 🕉️ #shorts",
+            "description": "जानिए महादेव से जुड़ा वो खौफनाक और चमत्कारी रहस्य। #sanatan #mahadev #shorts",
             "hashtags": ["#shorts", "#mahadev", "#bhakti"]
         }
         write_json(Path("video_metadata.json"), fallback_meta)
-        if not Path("final_short.mp4").exists():
-            # Create a fallback video or use any available file
-            pass
+        if not Path("final_short.mp4").exists() and Path("Spiritual_AI_Video/output/Episode_001/final_short.mp4").exists():
+            shutil.copy(Path("Spiritual_AI_Video/output/Episode_001/final_short.mp4"), Path("final_short.mp4"))
         raise error
