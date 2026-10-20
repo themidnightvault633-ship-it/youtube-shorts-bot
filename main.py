@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import random
+import time
 import requests
 from datetime import datetime
 from PIL import Image
@@ -90,25 +91,24 @@ def generate_multispiritual_script():
     ]
     """
     
-    # Error ke mutabiq yeh naya model use kar rahe hain
-    models_to_try = ['gemini-3.8-flash']
-    
-    for attempt in range(3):
-        for model_name in models_to_try:
-            try:
-                print(f"🔄 Trying model {model_name} (Attempt {attempt+1})...")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(response_mime_type="application/json")
-                )
-                data = json.loads(response.text)
-                if not check_duplicate_story(data.get("title", "")):
-                    return data
-            except Exception as e:
-                print(f"⚠️ Error with {model_name}: {e}")
-                import time
-                time.sleep(2)
+    # 503 Overload fix: Smart waiting between retries
+    for attempt in range(1, 5):
+        try:
+            print(f"🔄 Trying model gemini-3.8-flash (Attempt {attempt})...")
+            response = client.models.generate_content(
+                model='gemini-3.8-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json")
+            )
+            data = json.loads(response.text)
+            if not check_duplicate_story(data.get("title", "")):
+                return data
+        except Exception as e:
+            print(f"⚠️ Error on attempt {attempt}: {e}")
+            if attempt < 4:
+                wait_time = attempt * 5  # 5 sec, 10 sec, 15 sec ka gap
+                print(f"⏳ Server busy. Waiting {wait_time} seconds before retrying...")
+                time.sleep(wait_time)
             
     return None
 
@@ -122,7 +122,7 @@ def create_video():
     print("🧠 Multi-Spiritual Autonomous Content Engine Running...")
     content = generate_multispiritual_script()
     if not content:
-        raise Exception("❌ Failed to generate script after multiple retries.")
+        raise Exception("❌ Failed to generate script after multiple retries due to server load.")
         
     print(f"🎬 Title: {content['title']}")
     print(f"📌 Theme: {content['theme']}")
