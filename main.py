@@ -18,7 +18,6 @@ from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, concate
 HISTORY_FILE = "story_history.json"
 ANALYTICS_FILE = "performance_metrics.json"
 
-# All-In-One Spiritual Categories for Endless Variety
 SPIRITUAL_CATEGORIES = [
     "Ramayan Untold Secrets & Divine Lessons",
     "Mahabharat Hidden Truths & Warrior Tales",
@@ -91,18 +90,24 @@ def generate_multispiritual_script():
     ]
     """
     
-    for _ in range(3):
-        try:
-            response = client.models.generate_content(
-                model='gemini-3.8-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json")
-            )
-            data = json.loads(response.text)
-            if not check_duplicate_story(data.get("title", "")):
-                return data
-        except Exception as e:
-            print(f"⚠️ AI generation error: {e}")
+    models_to_try = ['gemini-3.8-flash', 'gemini-1.5-flash', 'gemini-2.5-flash']
+    
+    for attempt in range(3):
+        for model_name in models_to_try:
+            try:
+                print(f"🔄 Trying model {model_name} (Attempt {attempt+1})...")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_type="application/json")
+                )
+                data = json.loads(response.text)
+                if not check_duplicate_story(data.get("title", "")):
+                    return data
+            except Exception as e:
+                print(f"⚠️ Error with {model_name}: {e}")
+                import time
+                time.sleep(2) # Thoda wait karke agla model try karega
             
     return None
 
@@ -116,7 +121,7 @@ def create_video():
     print("🧠 Multi-Spiritual Autonomous Content Engine Running...")
     content = generate_multispiritual_script()
     if not content:
-        raise Exception("❌ Failed to generate script.")
+        raise Exception("❌ Failed to generate script after multiple retries due to server load.")
         
     print(f"🎬 Title: {content['title']}")
     print(f"📌 Theme: {content['theme']}")
