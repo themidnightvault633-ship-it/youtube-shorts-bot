@@ -26,7 +26,7 @@ from moviepy.editor import (
 )
 
 # ==========================================================
-# CONFIGURATION
+# CONFIGURATION & SETUP
 # ==========================================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
@@ -46,7 +46,6 @@ VOICE = "hi-IN-MadhurNeural"
 MAX_SCENES = 5
 MAX_RETRIES = 3
 
-# Automatic background music detection if placed in root or path specified
 MUSIC_FILE = os.getenv("MUSIC_FILE", "bgm.mp3")
 MUSIC_VOLUME = 0.10
 
@@ -61,14 +60,12 @@ logging.basicConfig(
 )
 
 if not API_KEY:
-    raise RuntimeError(
-        "GEMINI_API_KEY missing. Add it to your GitHub Secrets."
-    )
+    raise RuntimeError("GEMINI_API_KEY missing. Add it to your GitHub Secrets.")
 
 client = genai.Client(api_key=API_KEY)
 
 # ==========================================================
-# SPIRITUAL CATEGORIES & FESTIVALS
+# SPIRITUAL CATEGORIES & FESTIVALS AUTOMATION
 # ==========================================================
 
 SPIRITUAL_CATEGORIES = [
@@ -87,30 +84,6 @@ FESTIVALS = [
     {"name": "Maha Shivratri", "date": "2026-02-15", "hindi": "महाशिवरात्रि विशेष"}
 ]
 
-# ==========================================================
-# JSON / EPISODE MANAGEMENT
-# ==========================================================
-
-def read_json(path, default):
-    if not path.exists():
-        return default
-    try:
-        with open(path, "r", encoding="utf-8") as file:
-            return json.load(file)
-    except (json.JSONDecodeError, OSError):
-        logging.exception("Could not read JSON: %s", path)
-        return default
-
-def write_json(path, data):
-    temp_path = path.with_suffix(".tmp")
-    with open(temp_path, "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
-    temp_path.replace(path)
-
-def get_next_episode():
-    tracker = read_json(TRACKER_FILE, {"episode": 1})
-    return max(1, int(tracker.get("episode", 1)))
-
 def check_upcoming_festival():
     today = datetime.now().date()
     for fest in FESTIVALS:
@@ -122,6 +95,30 @@ def check_upcoming_festival():
         except:
             pass
     return None
+
+# ==========================================================
+# JSON & EPISODE MANAGEMENT (SAFE READ/WRITE)
+# ==========================================================
+
+def read_json(path, default):
+    if not path.exists():
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (json.JSONDecodeError, OSError):
+        logging.exception("Could not read JSON (Corrupt File handled): %s", path)
+        return default
+
+def write_json(path, data):
+    temp_path = path.with_suffix(".tmp")
+    with open(temp_path, "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+    temp_path.replace(path)
+
+def get_next_episode():
+    tracker = read_json(TRACKER_FILE, {"episode": 1})
+    return max(1, int(tracker.get("episode", 1)))
 
 def commit_episode(episode_number, title, script):
     history = read_json(HISTORY_FILE, {"episodes": []})
@@ -135,7 +132,7 @@ def commit_episode(episode_number, title, script):
     write_json(TRACKER_FILE, {"episode": episode_number + 1})
 
 # ==========================================================
-# AI ULTRA-VIRAL SCRIPT GENERATION
+# AI SCRIPT GENERATOR WITH DUPLICATE CHECKER
 # ==========================================================
 
 def generate_content_script(episode_number):
@@ -144,47 +141,38 @@ def generate_content_script(episode_number):
 
     festival_focus = check_upcoming_festival()
     if festival_focus:
-        context_prompt = f"Trending Festival Special: {festival_focus}. Focus on mind-blowing devotion, secret rituals, and deeply emotional storytelling."
+        context_prompt = f"Trending Festival Special: {festival_focus}. Focus on deep devotion, spiritual significance, and divine storytelling."
     else:
         chosen_category = random.choice(SPIRITUAL_CATEGORIES)
-        context_prompt = f"Genre / Category: {chosen_category}. Pick an extremely gripping, jaw-dropping, mysterious, and viral untold story from this category."
+        context_prompt = f"Genre / Category: {chosen_category}. Pick an extremely gripping, emotional, and divine untold story from this category."
 
     prompt = f"""
-You are an elite YouTube Shorts viral growth expert and master storyteller specializing in Sanatan Dharma and Hindu Mythology.
-Create a short, extremely high-retention vertical YouTube Short episode in pure, powerful Shuddh Hindi.
+You are an expert Hindu mythological and spiritual scriptwriter.
+Create a short viral vertical YouTube Short episode in pure Shuddh Hindi.
 
 Episode number: {episode_number}
 {context_prompt}
 
-CRITICAL REQUIREMENTS FOR MAXIMUM VIRALITY:
-1. **The Hook (First 2 seconds):** Must start with a shocking, mind-blowing, or spine-chilling question/statement in Hindi. No boring introductions!
-2. **Storytelling:** Fast-paced, deeply emotional, mysterious, and captivating narrative in pure Devanagari Hindi. 
-3. **Target Duration:** 35 to 45 seconds total length.
-4. **Structure:** Exactly 4 to 5 chronological visual scenes.
-5. **Visual Prompts:** Detailed English prompts for 4K cinematic photorealistic imagery with dramatic lighting, Unreal Engine 5 aesthetic, vertical 9:16 aspect ratio.
+Previously used titles (DO NOT REPEAT THESE TOPICS):
+{json.dumps(previous_stories[-25:], ensure_ascii=False)}
+
+Requirements:
+1. **Hook:** Start with a powerful, attention-grabbing hook in the first 2 seconds.
+2. **Language:** Pure Hindi in Devanagari script with respectful devotional tone.
+3. **Fact-Check:** Keep facts authentic to Sanatan Dharma traditions and clearly distinguish folklore from established shastric references.
+4. **Structure:** Exactly 4 to 5 chronological scenes with setup, main event, and takeaway.
+5. **Duration:** Optimized for 35-45 seconds total reading time.
 
 Return ONLY a valid JSON object in this exact structure:
 {{
-  "title": "Viral catchy Hindi title with emojis #shorts",
-  "description": "High-SEO Hindi description with popular hashtags",
-  "script": "Complete continuous Hindi narration text",
-  "hashtags": ["#SanatanDharma", "#HinduMythology", "#ViralShorts"],
+  "title": "Catchy Hindi title with emojis #shorts",
+  "description": "SEO-friendly Hindi description with hashtags",
+  "script": "Complete Hindi narration text",
+  "hashtags": ["#SanatanDharma", "#Bhakti", "#ViralShorts"],
   "scenes": [
     {{
-      "narration": "Shocking hook or story part for scene 1 in pure Hindi",
-      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, dramatic divine lighting"
-    }},
-    {{
-      "narration": "Continuation of the gripping story for scene 2 in Hindi",
-      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, epic atmosphere"
-    }},
-    {{
-      "narration": "Climax or turning point for scene 3 in Hindi",
-      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, divine aura"
-    }},
-    {{
-      "narration": "Powerful spiritual conclusion for scene 4 in Hindi",
-      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, emotional spiritual depth"
+      "narration": "Hindi narration for scene 1",
+      "image_prompt": "Detailed cinematic photorealistic visual prompt in English"
     }}
   ]
 }}
@@ -195,9 +183,7 @@ Return ONLY a valid JSON object in this exact structure:
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                ),
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
             )
             data = json.loads(response.text)
             required = ["title", "description", "script", "scenes"]
@@ -214,7 +200,7 @@ Return ONLY a valid JSON object in this exact structure:
             data["script"] = scene_script
 
             if not data.get("hashtags"):
-                data["hashtags"] = ["#SanatanDharma", "#Bhakti", "#Viral"]
+                data["hashtags"] = ["#SanatanDharma", "#Bhakti"]
 
             return data
 
@@ -223,51 +209,33 @@ Return ONLY a valid JSON object in this exact structure:
             print(f"Script retry {attempt + 1}: {error}")
             time.sleep(2 * (attempt + 1))
 
-    # High-Impact Fallback Script
+    # Safe Fallback Script
     return {
-        "title": "इस रहस्य को जानकर कांप उठेगी रूह! 🕉️ #shorts #mahadev",
-        "description": "जानिए महादेव से जुड़ा वो खौफनाक और चमत्कारी रहस्य जो आज भी विज्ञान की समझ से परे है। #sanatan #viral",
-        "script": "क्या आप जानते हैं कि कैलाश पर्वत पर आज भी एक ऐसी रहस्यमयी शक्ति मौजूद है जहाँ इंसानों का जाना नामुमकिन है? जो भी वहाँ गया, वह कभी वापस नहीं लौटा! वैज्ञानिकों का मानना है कि वहाँ समय खुद रुक जाता है। पौराणिक मान्यता है कि यह स्थान सीधे सीधे आदिदेव महादेव का निवास है, जहाँ प्रकृति भी बिना उनकी आज्ञा के पत्थर नहीं हिला सकती। हर हर महादेव!",
-        "hashtags": ["#Mahadev", "#Kailash", "#SanatanDharma", "#ViralShorts"],
+        "title": "रहस्यमयी महादेव और कैलाश पर्वत 🕉️ #shorts",
+        "description": "जानिए भगवान शिव से जुड़ा एक अद्भुत और चमत्कारी रहस्य। #sanatan #mahadev",
+        "script": "क्या आप जानते हैं कि ब्रह्मांड के रचियता भगवान शिव का निवास कैलाश पर्वत आज भी विज्ञान के लिए एक पहेली है? वैज्ञानिक आज तक यह नहीं समझ पाए कि वहाँ ऐसी कौन सी ऊर्जा है जो समय को भी प्रभावित करती है। पौराणिक कथाओं के अनुसार, यह स्थान साक्षात शिव का धाम है। हर हर महादेव!",
+        "hashtags": ["#Mahadev", "#Shiva", "#SanatanDharma"],
         "scenes": [
-            {
-                "narration": "क्या आप जानते हैं कि कैलाश पर्वत पर आज भी एक ऐसी रहस्यमयी शक्ति मौजूद है जहाँ इंसानों का जाना नामुमकिन है?",
-                "image_prompt": "Photorealistic majestic Mount Kailash under dark mystical stormy cosmic sky, cinematic lighting, 4k vertical 9:16"
-            },
-            {
-                "narration": "जो भी वहाँ गया, वह कभी वापस नहीं लौटा! वैज्ञानिकों का मानना है कि वहाँ समय खुद रुक जाता है.",
-                "image_prompt": "Eerie glowing mystical fog rolling over sacred snowy Himalayan peaks, cinematic dramatic atmosphere, vertical"
-            },
-            {
-                "narration": "पौराणिक मान्यता है कि यह स्थान सीधे सीधे आदिदेव महादेव का निवास है,",
-                "image_prompt": "Divine silhouette of Lord Shiva meditating on a glowing peak with divine cosmic light rays, 4k epic art"
-            },
-            {
-                "narration": "जहाँ प्रकृति भी बिना उनकी आज्ञा के पत्तर नहीं हिला सकती। हर हर महादेव!",
-                "image_prompt": "Massive cosmic divine energy radiating from sacred mountain, breathtaking spiritual view, vertical"
-            }
+            {"narration": "क्या आप जानते हैं कि ब्रह्मांड के रचियता भगवान शिव का निवास कैलाश पर्वत आज भी विज्ञान के लिए एक पहेली है?", "image_prompt": "Majestic Mount Kailash under cosmic sky, cinematic divine lighting, 4k vertical"},
+            {"narration": "वैज्ञानिक आज तक यह नहीं समझ पाए कि वहाँ ऐसी कौन सी ऊर्जा है जो समय को भी प्रभावित करती है।", "image_prompt": "Mystical fog and glowing aura over snowy Himalayan peaks, dramatic cinematic lighting"},
+            {"narration": "पौराणिक कथाओं के अनुसार, यह स्थान साक्षात शिव का धाम है। हर हर महादेव!", "image_prompt": "Divine silhouette of Lord Shiva meditating with cosmic energy rays, epic art"}
         ]
     }
 
 # ==========================================================
-# AUDIO GENERATION
+# AUDIO & VOICE GENERATION
 # ==========================================================
 
 async def generate_audio(text, output_path):
-    communicate = edge_tts.Communicate(
-        text=text,
-        voice=VOICE,
-        rate="-2%",
-        pitch="+0Hz",
-    )
+    communicate = edge_tts.Communicate(text=text, voice=VOICE, rate="-2%", pitch="+0Hz")
     await communicate.save(str(output_path))
 
 # ==========================================================
-# ULTRA-HD IMAGE DOWNLOADER
+# AI IMAGE GENERATOR (RETRY & VALIDATION)
 # ==========================================================
 
 def download_scene_image(prompt, output_path):
-    enhanced_prompt = f"{prompt}, highly detailed, cinematic lighting, 8k resolution, photorealistic, Unreal Engine 5 render, dramatic contrast"
+    enhanced_prompt = f"{prompt}, highly detailed, cinematic lighting, 8k resolution, photorealistic, Unreal Engine 5 render"
     encoded_prompt = requests.utils.quote(enhanced_prompt)
     image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true&enhance=true"
 
@@ -294,12 +262,13 @@ def download_scene_image(prompt, output_path):
             print(f"Image retry {attempt + 1}: {error}")
             time.sleep(2 * (attempt + 1))
 
+    # Fallback image if download completely fails
     img = Image.new('RGB', (WIDTH, HEIGHT), color=(15, 10, 30))
     img.save(output_path)
     return output_path
 
 # ==========================================================
-# AUTO FONT DOWNLOADER & HINDI OVERLAYS
+# HINDI FONT & SUBTITLE SYSTEM
 # ==========================================================
 
 def find_hindi_font():
@@ -308,7 +277,6 @@ def find_hindi_font():
         return str(local_font)
     
     try:
-        print("📥 Downloading Noto Sans Devanagari font...")
         font_url = "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari-Regular.ttf"
         res = requests.get(font_url, timeout=15)
         if res.status_code == 200:
@@ -320,7 +288,6 @@ def find_hindi_font():
 
     candidates = [
         "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
         "C:/Windows/Fonts/NirmalaB.ttf",
         "C:/Windows/Fonts/mangal.ttf",
     ]
@@ -345,27 +312,23 @@ def fit_vertical_image(image_path, episode_number):
     left = (new_width - WIDTH) // 2
     top = (new_height - HEIGHT) // 2
     image = image.crop((left, top, left + WIDTH, top + HEIGHT))
-    image = ImageEnhance.Contrast(image).enhance(1.12)
-    image = ImageEnhance.Color(image).enhance(1.05)
+    image = ImageEnhance.Contrast(image).enhance(1.1)
 
     draw = ImageDraw.Draw(image)
     font_path = find_hindi_font()
     
-    if font_path:
-        badge_font = ImageFont.truetype(font_path, 42)
-        brand_font = ImageFont.truetype(font_path, 46)
-    else:
-        badge_font = ImageFont.load_default()
-        brand_font = ImageFont.load_default()
+    badge_font = ImageFont.truetype(font_path, 42) if font_path else ImageFont.load_default()
+    brand_font = ImageFont.truetype(font_path, 46) if font_path else ImageFont.load_default()
 
+    # Episode Badge (Top Left)
     badge_text = f"Spiritual  Episode {episode_number}"
     bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
     bw = bbox[2] - bbox[0] + 40
     bh = bbox[3] - bbox[1] + 24
-    
     draw.rounded_rectangle([50, 50, 50 + bw, 50 + bh], radius=10, fill=(212, 175, 55), outline=(255, 255, 255), width=2)
     draw.text((70, 62), badge_text, fill=(20, 20, 20), font=badge_font)
 
+    # Sacred Branding (Top Right)
     brand_text = "॥ ॐ नमः शिवाय ॥"
     bbox_brand = draw.textbbox((0, 0), brand_text, font=brand_font)
     bx_width = bbox_brand[2] - bbox_brand[0]
@@ -394,11 +357,7 @@ def create_subtitle_image(text, output_path):
     font_path = find_hindi_font()
     canvas = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
-    
-    if font_path:
-        font = ImageFont.truetype(font_path, 56)
-    else:
-        font = ImageFont.load_default()
+    font = ImageFont.truetype(font_path, 56) if font_path else ImageFont.load_default()
 
     lines = wrap_hindi_text(draw, text, font, max_width=920)
     line_height = 80
@@ -410,14 +369,13 @@ def create_subtitle_image(text, output_path):
         text_width = bbox[2] - bbox[0]
         x = (WIDTH - text_width) // 2
         y = start_y + index * line_height
-
         draw.text((x, y), line, font=font, fill="white", stroke_width=4, stroke_fill="black")
 
     canvas.save(output_path)
     return output_path
 
 # ==========================================================
-# VIDEO RENDERING & BGM MIXING
+# CINEMATIC VIDEO RENDERING & QUALITY CHECKER
 # ==========================================================
 
 def render_video(content, episode_dir, episode_number):
@@ -458,7 +416,7 @@ def render_video(content, episode_dir, episode_number):
 
         video = CompositeVideoClip([background_video, subtitle_video], size=(WIDTH, HEIGHT)).set_audio(audio)
 
-        # Smart Background Music Mixing
+        # Background Music Integration
         final_audio = audio
         if MUSIC_FILE and Path(MUSIC_FILE).is_file():
             try:
@@ -469,9 +427,8 @@ def render_video(content, episode_dir, episode_number):
                     music_clip = music_clip.subclip(0, total_duration)
                 music_clip = music_clip.volumex(MUSIC_VOLUME)
                 final_audio = CompositeAudioClip([audio, music_clip])
-                print("🎵 Background music successfully blended with voiceover!")
-            except Exception as bgm_err:
-                print(f"⚠️ BGM loading warning: {bgm_err}")
+            except Exception as e:
+                print(f"⚠️ BGM loading warning: {e}")
 
         video = video.set_audio(final_audio)
 
@@ -489,7 +446,6 @@ def render_video(content, episode_dir, episode_number):
         video.close()
         background_video.close()
         subtitle_video.close()
-
         return final_path
 
     finally:
@@ -517,6 +473,10 @@ def validate_video(video_path):
     finally:
         clip.close()
 
+# ==========================================================
+# MAIN PIPELINE EXECUTION
+# ==========================================================
+
 def create_video():
     episode_number = get_next_episode()
     episode_dir = OUTPUT_DIR / f"Episode_{episode_number:03d}"
@@ -536,6 +496,7 @@ def create_video():
     final_video = render_video(content, episode_dir, episode_number)
     validate_video(final_video)
 
+    # Commit episode ONLY after successful validation
     commit_episode(episode_number, content["title"], content["script"])
 
     metadata = {
@@ -549,10 +510,11 @@ def create_video():
 
     write_json(episode_dir / "video_metadata.json", metadata)
     
+    # Copy to root for automated YouTube upload pipeline
     shutil.copy(final_video, Path("final_short.mp4"))
     write_json(Path("video_metadata.json"), metadata)
 
-    print("\nSUCCESS!")
+    print("\nSUCCESS! Video generated and validated successfully.")
 
 if __name__ == "__main__":
     try:
@@ -560,10 +522,11 @@ if __name__ == "__main__":
     except Exception as error:
         logging.exception("Pipeline failed")
         print("\nERROR:", error)
+        # Safe Fallback to ensure upload script never blocks workflow
         fallback_meta = {
-            "title": "इस रहस्य को जानकर कांप उठेगी रूह! 🕉️ #shorts",
-            "description": "जानिए महादेव से जुड़ा वो खौफनाक और चमत्कारी रहस्य। #sanatan #mahadev #shorts",
-            "hashtags": ["#shorts", "#mahadev", "#bhakti"]
+            "title": "रहस्यमयी महादेव 🕉️ #shorts",
+            "description": "जानिए भगवान शिव से जुड़ा रहस्य। #sanatan #mahadev #shorts",
+            "hashtags": ["#shorts", "#mahadev"]
         }
         write_json(Path("video_metadata.json"), fallback_meta)
         if not Path("final_short.mp4").exists() and Path("Spiritual_AI_Video/output/Episode_001/final_short.mp4").exists():
