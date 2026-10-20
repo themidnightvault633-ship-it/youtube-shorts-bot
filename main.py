@@ -90,7 +90,8 @@ def generate_multispiritual_script():
     ]
     """
     
-    models_to_try = ['gemini-1.5-flash', 'gemini-2.5-flash']
+    # Error ke mutabiq yeh naya model use kar rahe hain
+    models_to_try = ['gemini-3.8-flash']
     
     for attempt in range(3):
         for model_name in models_to_try:
