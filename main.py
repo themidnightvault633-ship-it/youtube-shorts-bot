@@ -11,7 +11,6 @@ from datetime import datetime
 import requests
 import edge_tts
 
-from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
@@ -27,8 +26,6 @@ from moviepy.editor import (
 # ==========================================================
 # CONFIGURATION
 # ==========================================================
-
-load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL_NAME = "gemini-2.5-flash"
@@ -47,7 +44,6 @@ VOICE = "hi-IN-MadhurNeural"
 MAX_SCENES = 5
 MAX_RETRIES = 3
 
-# Optional: path to a licensed background music file.
 MUSIC_FILE = os.getenv("MUSIC_FILE", "")
 MUSIC_VOLUME = 0.12
 
@@ -63,7 +59,7 @@ logging.basicConfig(
 
 if not API_KEY:
     raise RuntimeError(
-        "GEMINI_API_KEY missing. Add it to your .env file."
+        "GEMINI_API_KEY missing. Add it to your GitHub Secrets."
     )
 
 client = genai.Client(api_key=API_KEY)
@@ -95,7 +91,6 @@ FESTIVALS = [
 def read_json(path, default):
     if not path.exists():
         return default
-
     try:
         with open(path, "r", encoding="utf-8") as file:
             return json.load(file)
@@ -103,18 +98,15 @@ def read_json(path, default):
         logging.exception("Could not read JSON: %s", path)
         return default
 
-
 def write_json(path, data):
     temp_path = path.with_suffix(".tmp")
     with open(temp_path, "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
     temp_path.replace(path)
 
-
 def get_next_episode():
     tracker = read_json(TRACKER_FILE, {"episode": 1})
     return max(1, int(tracker.get("episode", 1)))
-
 
 def check_upcoming_festival():
     today = datetime.now().date()
@@ -128,7 +120,6 @@ def check_upcoming_festival():
             pass
     return None
 
-
 def commit_episode(episode_number, title, script):
     history = read_json(HISTORY_FILE, {"episodes": []})
     history["episodes"].append({
@@ -140,17 +131,13 @@ def commit_episode(episode_number, title, script):
     write_json(HISTORY_FILE, history)
     write_json(TRACKER_FILE, {"episode": episode_number + 1})
 
-
 # ==========================================================
-# AI SCRIPT GENERATION (MULTI-SPIRITUAL & TRENDING)
+# AI SCRIPT GENERATION
 # ==========================================================
 
 def generate_content_script(episode_number):
     history = read_json(HISTORY_FILE, {"episodes": []})
-    previous_stories = [
-        item.get("title", "")
-        for item in history.get("episodes", [])
-    ]
+    previous_stories = [item.get("title", "") for item in history.get("episodes", [])]
 
     festival_focus = check_upcoming_festival()
     if festival_focus:
@@ -206,7 +193,6 @@ There must be 4 to 5 scenes. Avoid text, watermarks, or logos inside generated i
                     response_mime_type="application/json"
                 ),
             )
-
             data = json.loads(response.text)
             required = ["title", "description", "script", "scenes"]
 
@@ -215,14 +201,10 @@ There must be 4 to 5 scenes. Avoid text, watermarks, or logos inside generated i
                     raise ValueError(f"Missing field: {key}")
 
             data["scenes"] = data["scenes"][:MAX_SCENES]
-
             if len(data["scenes"]) < 2:
                 raise ValueError("At least 2 scenes are required.")
 
-            scene_script = " ".join(
-                scene["narration"].strip()
-                for scene in data["scenes"]
-            )
+            scene_script = " ".join(scene["narration"].strip() for scene in data["scenes"])
             data["script"] = scene_script
 
             if not data.get("hashtags"):
@@ -237,7 +219,6 @@ There must be 4 to 5 scenes. Avoid text, watermarks, or logos inside generated i
 
     raise RuntimeError("Could not generate a valid script.")
 
-
 # ==========================================================
 # AUDIO GENERATION
 # ==========================================================
@@ -251,25 +232,17 @@ async def generate_audio(text, output_path):
     )
     await communicate.save(str(output_path))
 
-
 # ==========================================================
 # IMAGE GENERATION / DOWNLOAD
 # ==========================================================
 
 def download_scene_image(prompt, output_path):
     encoded_prompt = requests.utils.quote(prompt)
-    image_url = (
-        "https://image.pollinations.ai/prompt/"
-        f"{encoded_prompt}?width=1080&height=1920&nologo=true"
-    )
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true"
 
     for attempt in range(MAX_RETRIES):
         try:
-            response = requests.get(
-                image_url,
-                timeout=(15, 120),
-                headers={"User-Agent": "SpiritualAIShorts/1.0"},
-            )
+            response = requests.get(image_url, timeout=(15, 120), headers={"User-Agent": "SpiritualAIShorts/1.0"})
             response.raise_for_status()
 
             if not response.headers.get("Content-Type", "").startswith("image/"):
@@ -294,9 +267,8 @@ def download_scene_image(prompt, output_path):
     img.save(output_path)
     return output_path
 
-
 # ==========================================================
-# IMAGE FORMATTING & OVERLAYS (BADGE & SUBTITLES)
+# IMAGE FORMATTING & OVERLAYS
 # ==========================================================
 
 def find_hindi_font():
@@ -312,10 +284,8 @@ def find_hindi_font():
             return candidate
     return None
 
-
 def fit_vertical_image(image_path, episode_number):
     image = Image.open(image_path).convert("RGB")
-
     source_ratio = image.width / image.height
     target_ratio = WIDTH / HEIGHT
 
@@ -327,7 +297,6 @@ def fit_vertical_image(image_path, episode_number):
         new_height = int(new_width / source_ratio)
 
     image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
     left = (new_width - WIDTH) // 2
     top = (new_height - HEIGHT) // 2
     image = image.crop((left, top, left + WIDTH, top + HEIGHT))
@@ -343,7 +312,6 @@ def fit_vertical_image(image_path, episode_number):
         badge_font = ImageFont.load_default()
         brand_font = ImageFont.load_default()
 
-    # 1. Top-Left Badge
     badge_text = f"Spiritual  Episode {episode_number}"
     bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
     bw = bbox[2] - bbox[0] + 40
@@ -352,7 +320,6 @@ def fit_vertical_image(image_path, episode_number):
     draw.rounded_rectangle([50, 50, 50 + bw, 50 + bh], radius=10, fill=(212, 175, 55), outline=(255, 255, 255), width=2)
     draw.text((70, 62), badge_text, fill=(20, 20, 20), font=badge_font)
 
-    # 2. Top-Right Sacred Branding
     brand_text = "॥ ॐ नमः शिवाय ॥"
     bbox_brand = draw.textbbox((0, 0), brand_text, font=brand_font)
     bx_width = bbox_brand[2] - bbox_brand[0]
@@ -360,12 +327,10 @@ def fit_vertical_image(image_path, episode_number):
 
     return image
 
-
 def wrap_hindi_text(draw, text, font, max_width):
     words = text.split()
     lines = []
     current = ""
-
     for word in words:
         test = f"{current} {word}".strip()
         width = draw.textbbox((0, 0), test, font=font, stroke_width=2)[2]
@@ -378,7 +343,6 @@ def wrap_hindi_text(draw, text, font, max_width):
     if current:
         lines.append(current)
     return lines
-
 
 def create_subtitle_image(text, output_path):
     font_path = find_hindi_font()
@@ -400,29 +364,17 @@ def create_subtitle_image(text, output_path):
         x = (WIDTH - text_width) // 2
         y = start_y + index * line_height
 
-        draw.text(
-            (x, y),
-            line,
-            font=font,
-            fill="white",
-            stroke_width=4,
-            stroke_fill="black",
-        )
+        draw.text((x, y), line, font=font, fill="white", stroke_width=4, stroke_fill="black")
 
     canvas.save(output_path)
     return output_path
-
 
 # ==========================================================
 # VIDEO RENDERING
 # ==========================================================
 
 def render_video(content, episode_dir, episode_number):
-    scene_paths = [
-        episode_dir / f"scene_{i + 1:02d}.jpg"
-        for i in range(len(content["scenes"]))
-    ]
-
+    scene_paths = [episode_dir / f"scene_{i + 1:02d}.jpg" for i in range(len(content["scenes"]))]
     narration_path = episode_dir / "voiceover.mp3"
     final_path = episode_dir / "final_short.mp4"
 
@@ -445,30 +397,19 @@ def render_video(content, episode_dir, episode_number):
             temp_img_path = episode_dir / f"processed_scene_{index + 1:02d}.jpg"
             image.save(temp_img_path)
 
-            clip = (
-                ImageClip(str(temp_img_path))
-                .set_duration(scene_duration)
-                .set_position("center")
-            )
+            clip = ImageClip(str(temp_img_path)).set_duration(scene_duration).set_position("center")
             clips.append(clip)
 
             subtitle_path = episode_dir / f"subtitle_{index + 1:02d}.png"
             create_subtitle_image(content["scenes"][index]["narration"], subtitle_path)
 
-            subtitle_clip = (
-                ImageClip(str(subtitle_path), transparent=True)
-                .set_duration(scene_duration)
-                .set_position(("center", "center"))
-            )
+            subtitle_clip = ImageClip(str(subtitle_path), transparent=True).set_duration(scene_duration).set_position(("center", "center"))
             subtitle_clips.append(subtitle_clip)
 
         background_video = concatenate_videoclips(clips, method="compose")
         subtitle_video = concatenate_videoclips(subtitle_clips, method="compose")
 
-        video = CompositeVideoClip(
-            [background_video, subtitle_video],
-            size=(WIDTH, HEIGHT),
-        ).set_audio(audio)
+        video = CompositeVideoClip([background_video, subtitle_video], size=(WIDTH, HEIGHT)).set_audio(audio)
 
         music_clip = None
         if MUSIC_FILE and Path(MUSIC_FILE).is_file():
@@ -508,15 +449,9 @@ def render_video(content, episode_dir, episode_number):
             except Exception:
                 pass
 
-
-# ==========================================================
-# QUALITY CHECK
-# ==========================================================
-
 def validate_video(video_path):
     if not video_path.exists():
         raise RuntimeError("Final video file was not created.")
-
     if video_path.stat().st_size < 100_000:
         raise RuntimeError("Video file is unexpectedly small.")
 
@@ -528,17 +463,8 @@ def validate_video(video_path):
             raise RuntimeError("Video duration is too short.")
         if clip.audio is None:
             raise RuntimeError("Video has no audio.")
-
-        print(f"Resolution: {clip.w}x{clip.h}")
-        print(f"Duration: {clip.duration:.1f} seconds")
-        print(f"Size: {video_path.stat().st_size / 1e6:.2f} MB")
     finally:
         clip.close()
-
-
-# ==========================================================
-# MAIN PIPELINE
-# ==========================================================
 
 def create_video():
     episode_number = get_next_episode()
@@ -546,7 +472,6 @@ def create_video():
     episode_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nGenerating Spiritual Episode {episode_number}...")
-
     content = generate_content_script(episode_number)
 
     write_json(episode_dir / "script.json", content)
@@ -560,11 +485,7 @@ def create_video():
     final_video = render_video(content, episode_dir, episode_number)
     validate_video(final_video)
 
-    commit_episode(
-        episode_number,
-        content["title"],
-        content["script"],
-    )
+    commit_episode(episode_number, content["title"], content["script"])
 
     metadata = {
         "episode": episode_number,
@@ -576,11 +497,7 @@ def create_video():
     }
 
     write_json(episode_dir / "video_metadata.json", metadata)
-
     print("\nSUCCESS!")
-    print("Final video:", final_video)
-    print("Metadata:", episode_dir / "video_metadata.json")
-
 
 if __name__ == "__main__":
     try:
@@ -588,4 +505,3 @@ if __name__ == "__main__":
     except Exception as error:
         logging.exception("Pipeline failed")
         print("\nERROR:", error)
-        print("Check logs/generation.log")
