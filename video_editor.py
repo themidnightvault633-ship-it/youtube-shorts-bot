@@ -138,7 +138,10 @@ def render_video(content, episode_dir, episode_number, narration_path):
     finally:
         audio.close()
         for c in clips + subtitle_clips:
-            try: c.close() except: pass
+            try:
+                c.close()
+            except Exception:
+                pass
 
 # ==========================================================
 # 🧠 SMART BRAIN / QUALITY ASSURANCE (QA) ENGINE
