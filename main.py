@@ -5,6 +5,7 @@ import time
 import asyncio
 import logging
 import random
+import shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -497,6 +498,11 @@ def create_video():
     }
 
     write_json(episode_dir / "video_metadata.json", metadata)
+    
+    # ROOT FOLDER COPY FIX FOR YOUTUBE UPLOAD SCRIPT
+    shutil.copy(final_video, Path("final_short.mp4"))
+    write_json(Path("video_metadata.json"), metadata)
+
     print("\nSUCCESS!")
 
 if __name__ == "__main__":
