@@ -6,7 +6,7 @@ if not API_KEY:
     raise RuntimeError("❌ GEMINI_API_KEY is missing! Set it in environment variables or GitHub Secrets.")
 
 # यहाँ हमने मॉडल का नाम बिल्कुल सही और लेटेस्ट वाला सेट कर दिया है
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-3.8-flash"
 
 BASE_DIR = Path("Tech_News_AI_Studio")
 BASE_DIR.mkdir(exist_ok=True)
