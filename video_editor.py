@@ -1,5 +1,5 @@
 import logging
-from moviepy.editor import ImageClip, AudioFileClip
+from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 from config import FPS
 
 def create_video(image_paths, audio_path, output_path):
@@ -12,7 +12,6 @@ def create_video(image_paths, audio_path, output_path):
             clip = ImageClip(str(img_path)).set_duration(duration_per_image)
             clips.append(clip)
 
-        from moviepy.editor import concatenate_videoclips
         final_clip = concatenate_videoclips(clips, method="compose")
         final_clip = final_clip.set_audio(audio)
 
