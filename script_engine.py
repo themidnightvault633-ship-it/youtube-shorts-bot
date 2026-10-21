@@ -98,7 +98,7 @@ Return ONLY valid JSON:
 }}
 """
 
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(1, MAX_RETRIES + 1):
         try:
             response = client.models.generate_content(
                 model=MODEL_NAME,
@@ -125,7 +125,8 @@ Return ONLY valid JSON:
 
                 return data
         except Exception as e:
-            logging.warning(f"Script retry {attempt + 1}: {e}")
-            time.sleep(2)
+            logging.warning(f"Script retry {attempt}/{MAX_RETRIES} due to server load: {e}")
+            # सर्वर बिजी होने पर 6 सेकंड का गैップ देकर दोबारा ट्राई करेगा
+            time.sleep(6)
 
-    raise RuntimeError("❌ Script generation failed!")
+    raise RuntimeError("❌ Script generation failed due to server congestion. Please try again.")
