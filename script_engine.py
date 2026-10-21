@@ -49,11 +49,12 @@ Create a high-retention vertical YouTube Short script in pure Shuddh Hindi.
 Episode number: {episode_number}
 {context_prompt}
 
-CRITICAL RULES FOR OUR BRAIN/QA ENGINE:
-1. **The Hook (First 2 seconds):** Must start with a shocking, spine-chilling statement or question that forces retention (e.g., "क्या आप जानते हैं...", "रोंगटे खड़े कर देने वाला सच...").
-2. **Storytelling:** Fast-paced, emotional, mysterious, pure Devanagari Hindi. Target duration: 35-45 seconds.
+CRITICAL RULES FOR QA & VISUAL STYLE:
+1. **The Hook (First 2 seconds):** Must start with a shocking, spine-chilling statement or question in Hindi.
+2. **Storytelling:** Fast-paced, emotional, mysterious, pure Devanagari Hindi. Target duration: 30-45 seconds.
 3. **Structure:** Exactly 4 to 5 chronological scenes.
-4. **No repetitive topics** from this history list: {json.dumps(previous_stories[-25:], ensure_ascii=False)}
+4. **Image Prompts Style:** Must specify stunning **3D Pixar spiritual animation style, cinematic divine lighting, ultra-detailed characters, 8k resolution, vertical 9:16** for every scene prompt in English.
+5. **No repetitive topics** from this history list: {json.dumps(previous_stories[-25:], ensure_ascii=False)}
 
 Return ONLY a valid JSON object in this exact structure:
 {{
@@ -64,7 +65,7 @@ Return ONLY a valid JSON object in this exact structure:
   "scenes": [
     {{
       "narration": "Scene narration in pure Hindi",
-      "image_prompt": "Ultra-detailed 4K cinematic photorealistic visual prompt in English, dramatic lighting"
+      "image_prompt": "3D Pixar spiritual animation style, ultra-detailed character, cinematic divine lighting, 4k vertical 9:16"
     }}
   ]
 }}
@@ -88,15 +89,15 @@ Return ONLY a valid JSON object in this exact structure:
             logging.exception("Script generation failed, retrying...")
             time.sleep(2 * (attempt + 1))
 
-    # High-quality fallback script
+    # High-quality fallback script with 3D Pixar style prompts
     return {
         "title": "इस रहस्य को जानकर कांप उठेगी रूह! 🕉️ #shorts",
         "description": "जानिए महादेव से जुड़ा वो रहस्य जो विज्ञान के लिए पहेली है। #sanatan #mahadev",
         "script": "क्या आप जानते हैं कि कैलाश पर्वत पर आज भी एक ऐसी रहस्यमयी शक्ति मौजूद है जहाँ इंसानों का जाना नामुमकिन है? वैज्ञानिक आज तक यह नहीं समझ पाए कि वहाँ समय क्यों रुक जाता है। हर हर महादेव!",
         "hashtags": ["#Mahadev", "#Shiva", "#SanatanDharma"],
         "scenes": [
-            {"narration": "क्या आप जानते हैं कि कैलाश पर्वत पर आज भी एक ऐसी रहस्यमयी शक्ति मौजूद है जहाँ इंसानों का जाना नामुमकिन है?", "image_prompt": "Majestic Mount Kailash under cosmic dark stormy sky, cinematic lighting, 4k vertical"},
-            {"narration": "वैज्ञानिक आज तक यह नहीं समझ पाए कि वहाँ समय क्यों रुक जाता है।", "image_prompt": "Mystical glowing fog over snowy Himalayan peaks, dramatic cinematic atmosphere"},
-            {"narration": "पौराणिक मान्यता है कि यह स्थान साक्षात शिव का धाम है। हर हर महादेव!", "image_prompt": "Divine silhouette of Lord Shiva meditating with cosmic energy rays, epic art"}
+            {"narration": "क्या आप जानते हैं कि कैलाश पर्वत पर आज भी एक ऐसी रहस्यमयी शक्ति मौजूद है जहाँ इंसानों का जाना नामुमकिन है?", "image_prompt": "3D Pixar spiritual animation style, majestic Mount Kailash under cosmic dark sky, cinematic divine lighting, 4k vertical 9:16"},
+            {"narration": "वैज्ञानिक आज तक यह नहीं समझ पाए कि वहाँ समय क्यों रुक जाता है।", "image_prompt": "3D Pixar spiritual animation style, mystical glowing fog over snowy peaks, dramatic atmospheric lighting, vertical 9:16"},
+            {"narration": "पौराणिक मान्यता है कि यह स्थान साक्षात शिव का धाम है। हर हर महादेव!", "image_prompt": "3D Pixar spiritual animation style, divine silhouette of Lord Shiva meditating with cosmic energy rays, epic art, vertical 9:16"}
         ]
     }
