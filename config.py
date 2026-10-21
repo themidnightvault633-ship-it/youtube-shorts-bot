@@ -5,8 +5,8 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
     raise RuntimeError("❌ GEMINI_API_KEY is missing! Set it in environment variables or GitHub Secrets.")
 
-# यहाँ हमने मॉडल का नाम बिल्कुल सही और लेटेस्ट वाला सेट कर दिया है
-MODEL_NAME = "gemini-3.8-flash"
+# सबसे स्टेबल और बिना 503 एरर वाला मॉडल
+MODEL_NAME = "gemini-1.5-flash"
 
 BASE_DIR = Path("Tech_News_AI_Studio")
 BASE_DIR.mkdir(exist_ok=True)
@@ -17,7 +17,7 @@ LONG_SCRIPT_FILE = BASE_DIR / "latest_long_video_script.md"
 WIDTH = 1080
 HEIGHT = 1920
 FPS = 30
-MAX_RETRIES = 3
+MAX_RETRIES = 5  # रीट्राई अटेम्प्ट्स बढ़ा दिए गए हैं
 
 NEWS_FEEDS = [
     "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-IN&gl=IN&ceid=IN:en",
