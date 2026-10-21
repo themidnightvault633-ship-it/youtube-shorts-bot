@@ -25,7 +25,8 @@ def download_scene_image(prompt, output_path):
             temp_path.replace(output_path)
             return output_path
         except Exception:
-            logging.warning(f"Image download retry {attempt + 1}")
+            logging.warning(f"Image download retry {attempt}")
+            time.sleep(3)
 
     fallback = Image.new("RGB", (WIDTH, HEIGHT), color=(10, 15, 25))
     fallback.save(output_path)
