@@ -5,7 +5,8 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
     raise RuntimeError("❌ GEMINI_API_KEY is missing! Set it in environment variables or GitHub Secrets.")
 
-MODEL_NAME = "gemini-2.5-flash"
+# यहाँ model name को अपडेट कर दिया गया है
+MODEL_NAME = "gemini-2.0-flash"
 
 BASE_DIR = Path("Tech_News_AI_Studio")
 BASE_DIR.mkdir(exist_ok=True)
