@@ -1,92 +1,70 @@
-import json
-import shutil
-import asyncio
 import logging
 from pathlib import Path
-from datetime import datetime
-
-from config import OUTPUT_DIR, HISTORY_FILE, TRACKER_FILE, LOG_DIR
+from config import BASE_DIR, HISTORY_FILE, LONG_SCRIPT_FILE
 from script_engine import generate_content_script
 from image_engine import download_scene_image
-from voice_engine import generate_audio
-from video_editor import render_video, validate_video
+from voice_engine import generate_voiceover
+from video_editor import create_video
 
-BASE_DIR = Path("Spiritual_AI_Video")
-BASE_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-logging.basicConfig(
-    filename=str(LOG_DIR / "generation.log"),
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
-
-def read_json(path, default):
-    if not path.exists(): return default
-    try:
-        with open(path, "r", encoding="utf-8") as f: return json.load(f)
-    except: return default
-
-def write_json(path, data):
-    temp = path.with_suffix(".tmp")
-    with open(temp, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=2)
-    temp.replace(path)
-
-def get_next_episode():
-    return max(1, int(read_json(TRACKER_FILE, {"episode": 1}).get("episode", 1)))
-
-def commit_episode(ep_num, title, script):
-    history = read_json(HISTORY_FILE, {"episodes": []})
-    history["episodes"].append({"episode": ep_num, "title": title, "script": script, "created_at": datetime.now().isoformat()})
-    write_json(HISTORY_FILE, history)
-    write_json(TRACKER_FILE, {"episode": ep_num + 1})
-
-def create_video():
-    episode_number = get_next_episode()
-    episode_dir = OUTPUT_DIR / f"Episode_{episode_number:03d}"
-    episode_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"\n🚀 [Master Engine] Generating Spiritual Episode {episode_number}...")
-    content = generate_content_script(episode_number)
-    write_json(episode_dir / "script.json", content)
-    print("Title:", content["title"])
-
-    for index, scene in enumerate(content["scenes"]):
-        print(f"📥 [Image Engine] Downloading scene {index + 1}/{len(content['scenes'])}")
-        download_scene_image(scene["image_prompt"], episode_dir / f"scene_{index + 1:02d}.jpg")
-
-    narration_path = episode_dir / "voiceover.mp3"
-    print("🎙️ [Voice Engine] Generating neural Hindi voiceover...")
-    asyncio.run(generate_audio(content["script"], narration_path))
-
-    print("🎬 [Editing Engine] Rendering cinematic 1080x1920 video with BGM & Subtitles...")
-    final_video = render_video(content, episode_dir, episode_number, narration_path)
+def main():
+    logging.info("🚀 Starting Tech & Geopolitics News Automated Studio...")
     
-    # 🧠 Strict QA Brain Check (Instant Reject on Failure)
-    validate_video(final_video)
+    # 1. Generate Script & Long Blueprint
+    episode_number = 1
+    if HISTORY_FILE.exists():
+        try:
+            import json
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                episode_number = len(data.get("episodes", [])) + 1
+        except Exception:
+            pass
 
-    commit_episode(episode_number, content["title"], content["script"])
+    script_data = generate_content_script(episode_number)
+    logging.info(f"📰 Topic Selected: {script_data.get('topic_selected')}")
 
-    metadata = {
+    # 2. Download Scene Images
+    image_paths = []
+    for i, scene in enumerate(script_data["scenes"]):
+        img_path = BASE_DIR / f"scene_{i}.png"
+        logging.info(f"🎨 Downloading image {i+1}/4...")
+        download_scene_image(scene["image_prompt"], img_path)
+        image_paths.append(img_path)
+
+    # 3. Generate Voiceover
+    audio_path = BASE_DIR / "voiceover.mp3"
+    logging.info("🎙️ Generating professional news voiceover...")
+    generate_voiceover(script_data["script"], audio_path)
+
+    # 4. Create Final Short Video
+    output_video = Path("final_short.mp4")
+    logging.info("🎬 Assembling 1080p Full HD Short Video...")
+    create_video(image_paths, audio_path, output_video)
+    logging.info(f"✅ Short Video Ready: {output_video}")
+
+    # 5. Save History
+    history_data = {"episodes": []}
+    if HISTORY_FILE.exists():
+        try:
+            import json
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history_data = json.load(f)
+        except Exception:
+            pass
+            
+    history_data["episodes"].append({
         "episode": episode_number,
-        "title": content["title"],
-        "description": content["description"],
-        "hashtags": content.get("hashtags", []),
-        "video_file": str(final_video),
-        "created_at": datetime.now().isoformat(),
-    }
+        "title": script_data.get("title"),
+        "topic": script_data.get("topic_selected")
+    })
+    
+    import json
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history_data, f, ensure_ascii=False, indent=2)
 
-    write_json(episode_dir / "video_metadata.json", metadata)
-    shutil.copy(final_video, Path("final_short.mp4"))
-    write_json(Path("video_metadata.json"), metadata)
-
-    print("\n✅ [SUCCESS] Video generated, verified by QA Brain, and ready for 1080 upload!")
+    logging.info("🎉 Pipeline completed successfully! Long script saved to Tech_News_AI_Studio/")
 
 if __name__ == "__main__":
-    try:
-        create_video()
-    except Exception as error:
-        logging.exception("Pipeline failed due to QA rejection or system error")
-        print("\n❌ [PIPELINE ERROR / REJECTED]:", error)
-        raise error
+    main()
