@@ -5,7 +5,8 @@ from PIL import Image
 from config import WIDTH, HEIGHT, MAX_RETRIES
 
 def download_scene_image(prompt, output_path):
-    enhanced_prompt = f"{prompt}, highly detailed, cinematic lighting, 8k resolution, photorealistic, Unreal Engine 5 render, dramatic contrast"
+    # Enforce 3D Pixar & cinematic spiritual rendering tags automatically
+    enhanced_prompt = f"{prompt}, 3D Pixar spiritual animation style, highly detailed characters, cinematic divine lighting, 8k resolution, vibrant colors, Unreal Engine 5 render, vertical 9:16"
     encoded_prompt = requests.utils.quote(enhanced_prompt)
     image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&nologo=true&enhance=true"
 
