@@ -62,6 +62,17 @@ def main():
     )
     logging.info(f"✅ Short Video Ready: {output_video}")
 
+    # YouTube Upload ke liye metadata json generate karna zaroori hai
+    metadata = {
+        "file": str(output_video),
+        "title": script_data.get("title", "Breaking News #shorts"),
+        "description": script_data.get("description", "") + "\n\n" + " ".join(script_data.get("hashtags", [])),
+        "tags": script_data.get("hashtags", ["News", "Shorts"])
+    }
+    with open("video_metadata.json", "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+    logging.info("📄 video_metadata.json created successfully for YouTube upload.")
+
     history_data = {"episodes": []}
     if HISTORY_FILE.exists():
         try:
