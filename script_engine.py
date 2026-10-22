@@ -4,12 +4,11 @@ import time
 import logging
 import xml.etree.ElementTree as ET
 import requests
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from config import API_KEY, MODEL_NAME, HISTORY_FILE, LONG_SCRIPT_FILE, NEWS_FEEDS, MAX_RETRIES
 
-# पुरानी और सबसे स्टेबल गूगल लाइब्रेरी कॉन्फ़िगरेशन
-genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel(MODEL_NAME)
+client = genai.Client(api_key=API_KEY)
 
 def read_json(path, default):
     if not path.exists():
@@ -102,9 +101,11 @@ Return ONLY valid JSON:
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
+            # नया और सही तरीका नए SDK के लिए
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.8,
                 ),
