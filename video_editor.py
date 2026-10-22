@@ -1,19 +1,44 @@
 import logging
-from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
-from config import FPS
+from pathlib import Path
+from moviepy.editor import ImageClip, VideoFileClip, AudioFileClip, concatenate_videoclips, clips_array, ColorClip
+from config import WIDTH, HEIGHT, FPS
 
-def create_video(image_paths, audio_path, output_path):
+def create_split_screen_video(scene_data_list, audio_path, output_path, background_video_path=None):
     try:
         audio = AudioFileClip(str(audio_path))
-        duration_per_image = audio.duration / len(image_paths)
+        total_duration = audio.duration
+        top_height = HEIGHT // 2  # Top half for news visuals
 
-        clips = []
-        for img_path in image_paths:
+        duration_per_image = total_duration / len(scene_data_list)
+
+        # 1. Top Half: News scene images
+        top_clips = []
+        for item in scene_data_list:
+            img_path = item["image_path"]
             clip = ImageClip(str(img_path)).set_duration(duration_per_image)
-            clips.append(clip)
+            clip = clip.resize(width=WIDTH)
+            if clip.h > top_height:
+                clip = clip.crop(x1=0, y1=(clip.h - top_height)/2, x2=WIDTH, y2=(clip.h + top_height)/2)
+            top_clips.append(clip)
 
-        final_clip = concatenate_videoclips(clips, method="compose")
-        final_clip = final_clip.set_audio(audio)
+        top_final = concatenate_videoclips(top_clips, method="compose")
+
+        # 2. Bottom Half: Podcast / Background video or clean dark aesthetic fallback
+        if background_video_path and Path(background_video_path).exists():
+            bottom_clip = VideoFileClip(str(background_video_path))
+            if bottom_clip.duration < total_duration:
+                bottom_clip = bottom_clip.loop(duration=total_duration)
+            else:
+                bottom_clip = bottom_clip.subclip(0, total_duration)
+            bottom_clip = bottom_clip.resize(width=WIDTH)
+            if bottom_clip.h > top_height:
+                bottom_clip = bottom_clip.crop(x1=0, y1=(bottom_clip.h - top_height)/2, x2=WIDTH, y2=(bottom_clip.h + top_height)/2)
+        else:
+            bottom_clip = ColorClip(size=(WIDTH, top_height), color=(15, 20, 30)).set_duration(total_duration)
+
+        # 3. Combine Top & Bottom into 9:16 Split Screen
+        final_split = clips_array([[top_final], [bottom_clip]])
+        final_clip = final_split.set_audio(audio)
 
         final_clip.write_videofile(
             str(output_path),
@@ -23,9 +48,11 @@ def create_video(image_paths, audio_path, output_path):
             bitrate="8000k",
             logger=None
         )
+
         audio.close()
         final_clip.close()
         return output_path
+
     except Exception as e:
-        logging.exception("Video editing failed:")
+        logging.exception("Split-screen video editing failed:")
         raise RuntimeError(f"Video assembly failed: {e}")
