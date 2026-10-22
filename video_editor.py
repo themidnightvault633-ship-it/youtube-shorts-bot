@@ -7,11 +7,10 @@ def create_split_screen_video(scene_data_list, audio_path, output_path, backgrou
     try:
         audio = AudioFileClip(str(audio_path))
         total_duration = audio.duration
-        top_height = HEIGHT // 2  # Top half for news visuals
+        top_height = HEIGHT // 2
 
         duration_per_image = total_duration / len(scene_data_list)
 
-        # 1. Top Half: News scene images
         top_clips = []
         for item in scene_data_list:
             img_path = item["image_path"]
@@ -23,7 +22,6 @@ def create_split_screen_video(scene_data_list, audio_path, output_path, backgrou
 
         top_final = concatenate_videoclips(top_clips, method="compose")
 
-        # 2. Bottom Half: Podcast / Background video or clean dark aesthetic fallback
         if background_video_path and Path(background_video_path).exists():
             bottom_clip = VideoFileClip(str(background_video_path))
             if bottom_clip.duration < total_duration:
@@ -36,7 +34,6 @@ def create_split_screen_video(scene_data_list, audio_path, output_path, backgrou
         else:
             bottom_clip = ColorClip(size=(WIDTH, top_height), color=(15, 20, 30)).set_duration(total_duration)
 
-        # 3. Combine Top & Bottom into 9:16 Split Screen
         final_split = clips_array([[top_final], [bottom_clip]])
         final_clip = final_split.set_audio(audio)
 
