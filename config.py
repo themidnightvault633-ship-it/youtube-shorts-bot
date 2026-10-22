@@ -18,7 +18,7 @@ ASSETS_DIR.mkdir(exist_ok=True)
 WIDTH = 1080
 HEIGHT = 1920
 FPS = 30
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 
 NEWS_FEEDS = [
     "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-IN&gl=IN&ceid=IN:en",
