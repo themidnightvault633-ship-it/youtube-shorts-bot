@@ -4,11 +4,11 @@ import time
 import logging
 import xml.etree.ElementTree as ET
 import requests
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from config import API_KEY, MODEL_NAME, HISTORY_FILE, LONG_SCRIPT_FILE, NEWS_FEEDS, MAX_RETRIES
 
-genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel(MODEL_NAME)
+client = genai.Client(api_key=API_KEY)
 
 def read_json(path, default):
     if not path.exists():
@@ -71,7 +71,7 @@ Return ONLY valid JSON:
   "hashtags": ["#News", "#TechNews", "#Shorts"],
   "scenes": [
     {{
-      "narration": "Scene 1 text in appropriate language (Hinglish for National / English for International)",
+      "narration": "Scene 1 text",
       "anchor": "female_hi or female_en",
       "image_prompt": "Newsroom anchor desk, professional news anchor, 8k vertical 9:16, no text"
     }},
@@ -101,9 +101,10 @@ Return ONLY valid JSON:
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.8,
                 ),
