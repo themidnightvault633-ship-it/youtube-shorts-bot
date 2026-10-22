@@ -71,7 +71,7 @@ Return ONLY valid JSON:
   "hashtags": ["#News", "#TechNews", "#Shorts"],
   "scenes": [
     {{
-      "narration": "Scene 1 text",
+      "narration": "Scene 1 text in appropriate language",
       "anchor": "female_hi or female_en",
       "image_prompt": "Newsroom anchor desk, professional news anchor, 8k vertical 9:16, no text"
     }},
@@ -101,7 +101,6 @@ Return ONLY valid JSON:
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # नया और सही तरीका नए SDK के लिए
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=prompt,
@@ -125,7 +124,7 @@ Return ONLY valid JSON:
 
                 return data
         except Exception as e:
-            logging.warning(f"Script retry {attempt}/{MAX_RETRIES}: {e}")
-            time.sleep(5)
+            logging.warning(f"Script retry {attempt}/{MAX_RETRIES} due to server load/error: {e}")
+            time.sleep(15)  # 15 seconds gap to auto-recover from 503 high demand
 
-    raise RuntimeError("❌ Script generation failed.")
+    raise RuntimeError("❌ Script generation failed after max retries.")
