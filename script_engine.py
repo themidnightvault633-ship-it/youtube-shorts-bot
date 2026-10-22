@@ -7,7 +7,6 @@ import requests
 import google.generativeai as genai
 from config import API_KEY, MODEL_NAME, HISTORY_FILE, LONG_SCRIPT_FILE, NEWS_FEEDS, MAX_RETRIES
 
-# पुरानी और सबसे स्टेबल गूगल लाइब्रेरी कॉन्फ़िगरेशन
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
 
@@ -45,56 +44,57 @@ def generate_content_script(episode_number):
     selected_headlines = live_headlines[:12] if live_headlines else [
         "AI Deepfake Scams and Cybersecurity Alert in India",
         "Global Semiconductor Chip War: US, China, and India's New Strategy",
-        "ISRO and Future Space-Tech Breakthroughs",
-        "Major Geopolitical Shift in Global Economy"
+        "ISRO and Future Space-Tech Breakthroughs"
     ]
 
     prompt = f"""
-You are an elite Geopolitics, National News & Tech Investigation YouTube Director (like Dhruv Rathee and Nitish Rajput).
-
-Here are today's trending news topics:
+You are an elite YouTube News Director. Look at these trending news headlines:
 {json.dumps(selected_headlines, ensure_ascii=False)}
 
 Pick the MOST shocking topic that is NOT in this used list:
 {json.dumps(used_titles[-20:], ensure_ascii=False)}
 
-Generate TWO outputs in engaging Hinglish/Devanagari Hindi:
-1. A high-retention **YouTube Short (35-45 seconds, 4 scenes)** using HOOK -> SETUP -> PROOF -> PAYOFF.
+Determine if the topic is **National (India)** or **International (World/Global)**.
+- If it's **National**, write the script scenes in **Engaging Hinglish/Hindi** and use anchor types: `female_hi` or `male_hi`.
+- If it's **International**, write the script scenes in **Professional English** and use anchor types: `female_en` or `male_en`.
+
+Generate TWO outputs:
+1. A high-retention **YouTube Short (35-45 seconds, 4 scenes)**.
 2. A complete **Long Video Blueprint (8-10 minutes)** on the same topic.
 
-VISUAL STYLE FOR SHORT SCENES:
-Every `image_prompt` MUST be in English:
-"Hyper-realistic documentary digital illustration, dramatic newsroom & geopolitical lighting, 8k vertical 9:16, NO text, [detailed visual]"
-
-Return ONLY valid JSON (no markdown ticks inside, just raw JSON text):
+Return ONLY valid JSON:
 {{
   "topic_selected": "News headline chosen",
-  "title": "Click-worthy Hindi/Hinglish Short Title with emojis #shorts",
+  "category": "National or International",
+  "title": "Click-worthy Short Title with emojis #shorts",
   "description": "High-SEO description with hashtags",
-  "script": "Combined Hindi narration for the Short",
-  "hashtags": ["#TechNews", "#Geopolitics", "#CurrentAffairs", "#Shorts"],
+  "hashtags": ["#News", "#TechNews", "#Shorts"],
   "scenes": [
     {{
-      "narration": "Scene 1 (0-3s Hook in Hindi)",
-      "image_prompt": "Hyper-realistic documentary digital illustration, dramatic lighting, 8k vertical 9:16, [Scene 1]"
+      "narration": "Scene 1 text in appropriate language (Hinglish for National / English for International)",
+      "anchor": "female_hi or female_en",
+      "image_prompt": "Newsroom anchor desk, professional news anchor, 8k vertical 9:16, no text"
     }},
     {{
-      "narration": "Scene 2 (Core problem in Hindi)",
-      "image_prompt": "Hyper-realistic documentary digital illustration, dramatic lighting, 8k vertical 9:16, [Scene 2]"
+      "narration": "Scene 2 text",
+      "anchor": "male_hi or male_en",
+      "image_prompt": "Professional news anchor presenting breaking news, studio monitors, 8k vertical 9:16, no text"
     }},
     {{
-      "narration": "Scene 3 (Impact on India & World in Hindi)",
-      "image_prompt": "Hyper-realistic documentary digital illustration, dramatic lighting, 8k vertical 9:16, [Scene 3]"
+      "narration": "Scene 3 text",
+      "anchor": "female_hi or female_en",
+      "image_prompt": "High-tech news studio background, 8k vertical 9:16, no text"
     }},
     {{
-      "narration": "Scene 4 (Verdict + CTA in Hindi)",
-      "image_prompt": "Hyper-realistic documentary digital illustration, dramatic lighting, 8k vertical 9:16, [Scene 4]"
+      "narration": "Scene 4 text",
+      "anchor": "male_hi or male_en",
+      "image_prompt": "Newsroom desk closing shot, 8k vertical 9:16, no text"
     }}
   ],
   "long_video_package": {{
     "long_title": "3 High-CTR Long Video Title Options",
-    "thumbnail_idea": "Exact visual layout and 3-word text for YouTube Thumbnail",
-    "full_script_markdown": "Complete 8-minute structured Hindi script with B-Roll cues"
+    "thumbnail_idea": "Exact visual layout and text for YouTube Thumbnail",
+    "full_script_markdown": "Complete 8-minute structured script with B-Roll cues"
   }}
 }}
 """
@@ -112,13 +112,11 @@ Return ONLY valid JSON (no markdown ticks inside, just raw JSON text):
 
             if "scenes" in data and len(data["scenes"]) >= 3:
                 data["scenes"] = data["scenes"][:4]
-                data["script"] = " ".join(s["narration"].strip() for s in data["scenes"])
-
                 long_pkg = data.get("long_video_package", {})
                 if long_pkg:
                     with open(LONG_SCRIPT_FILE, "w", encoding="utf-8") as f:
                         f.write(f"# 🎬 LONG VIDEO BLUEPRINT\n\n")
-                        f.write(f"## 📌 Topic: {data.get('topic_selected')}\n\n")
+                        f.write(f"## 📌 Topic: {data.get('topic_selected')} ({data.get('category')})\n\n")
                         f.write(f"### 🎯 Title Ideas:\n{long_pkg.get('long_title')}\n\n")
                         f.write(f"### 🖼️ Thumbnail Concept:\n{long_pkg.get('thumbnail_idea')}\n\n")
                         f.write(f"---\n\n## 📝 Full Script:\n\n{long_pkg.get('full_script_markdown')}\n")
