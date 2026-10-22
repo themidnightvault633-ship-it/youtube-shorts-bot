@@ -1,5 +1,6 @@
 import random
 import requests
+import time
 import logging
 from PIL import Image
 from config import WIDTH, HEIGHT, MAX_RETRIES
