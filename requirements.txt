@@ -1,7 +1,9 @@
-google-genai
-edge-tts
-moviepy==1.0.3
-requests
-Pillow==9.5.0
-google-api-python-client
-google-auth-oauthlib
+google-genai>=0.1.1
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+moviepy>=1.0.3
+edge-tts>=6.1.9
+requests>=2.31.0
+Pillow>=10.0.0
+numpy>=1.24.0
