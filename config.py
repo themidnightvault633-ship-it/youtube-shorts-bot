@@ -6,8 +6,8 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
     raise RuntimeError("❌ GEMINI_API_KEY missing hai! GitHub Secrets ya Environment Variable mein set karein.")
 
-# Official stable model
-MODEL_NAME = "gemini-2.0-flash"
+# Latest Google Gemini Model
+MODEL_NAME = "gemini-3.8-flash"
 
 # ================= 2. DIRECTORIES & PATHS =================
 BASE_DIR = Path("AI_NEWS_CHANNEL_OUTPUT")
@@ -72,7 +72,7 @@ VOICE_PERSONAS = {
 }
 
 # ================= 6. 24/7 BACKGROUND MONITOR & SCHEDULES =================
-MONITOR_CHECK_INTERVAL_SECONDS = 600  # Har 10 minute mein RSS scan
+MONITOR_CHECK_INTERVAL_SECONDS = 600
 BREAKING_NEWS_KEYWORDS = [
     "breaking", "urgent", "war", "earthquake", "attack", "crisis", 
     "resigns", "explosion", "emergency", "dead", "banned", "launched", "crash"
