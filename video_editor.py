@@ -1,5 +1,14 @@
 import logging
 from pathlib import Path
+
+# ================= PILLOW ANTIALIAS COMPATIBILITY PATCH =================
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+if not hasattr(PIL.Image, 'LANCZOS'):
+    PIL.Image.LANCZOS = PIL.Image.Resampling.LANCZOS
+# ========================================================================
+
 from PIL import Image, ImageDraw
 
 from moviepy.editor import (
@@ -73,7 +82,6 @@ def create_split_screen_video(scene_data_list, output_path, video_title="NEWS UP
         total_duration = final_audio.duration
         all_allocated_clips.extend([final_audio, top_final])
 
-        # Anchor video path check
         anchor_path = anchor_video_path or (ASSETS_DIR / "anchor_studio.mp4")
         if not Path(anchor_path).exists():
             candidate = Path("user_uploaded_files/ttl=63d/user_uploaded/1000121747.mp4")
@@ -98,7 +106,6 @@ def create_split_screen_video(scene_data_list, output_path, video_title="NEWS UP
         split_layout = clips_array([[top_final], [bottom_clip]])
         all_allocated_clips.append(split_layout)
 
-        # Center banner
         banner_h = 90
         banner_file = create_breaking_news_banner(SHORT_WIDTH, banner_h, video_title, is_breaking)
         banner_clip = ImageClip(banner_file).set_duration(total_duration).set_pos((0, top_height - (banner_h // 2)))
