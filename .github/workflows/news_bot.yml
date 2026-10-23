@@ -1,0 +1,44 @@
+name: 24/7 AI News Studio Bot
+
+on:
+  schedule:
+    # Har 30 minute mein automatically 24 ghante chalega
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Isse aap 'Actions' tab se 1-click mein test run kar sakte hain
+
+jobs:
+  run-news-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install System Dependencies (FFmpeg & ImageMagick)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python Requirements
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run News Studio Bot
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python main.py --once --type short
+
+      - name: Save Generated Video Artifact (Testing ke liye)
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-news-video
+          path: AI_NEWS_CHANNEL_OUTPUT/shorts/*.mp4
+          retention-days: 3
