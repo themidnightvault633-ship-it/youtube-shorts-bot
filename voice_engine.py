@@ -18,7 +18,6 @@ VOICE_MAPPING = {
 
 
 def resolve_voice_id(anchor_type: str, language: str = "hinglish") -> str:
-    """Anchor gender aur language ke hisab se exact neural voice select karta hai."""
     anchor_type = anchor_type.lower()
     lang_key = "english" if "en" in anchor_type or language.lower() == "english" else "hinglish"
     gender_key = "female" if "female" in anchor_type else "male"
@@ -26,25 +25,11 @@ def resolve_voice_id(anchor_type: str, language: str = "hinglish") -> str:
     return VOICE_PERSONAS.get(lang_key, {}).get(gender_key) or VOICE_MAPPING.get(anchor_type, "hi-IN-SwaraNeural")
 
 
-async def _generate_tts_with_subtitles(text: str, voice_id: str, output_audio: Path, output_srt: Path = None):
+async def _generate_tts(text: str, voice_id: str, output_audio: Path):
     rate = "+10%" if "hi" in voice_id else "+12%"
     pitch = "-1Hz"
-
     communicate = edge_tts.Communicate(text=text, voice=voice_id, rate=rate, pitch=pitch)
-    
-    if output_srt:
-        submaker = edge_tts.SubMaker()
-        with open(output_audio, "wb") as f_audio:
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    f_audio.write(chunk["data"])
-                elif chunk["type"] == "WordBoundary":
-                    submaker.create_sub((chunk["offset"], chunk["duration"]), chunk["text"])
-        
-        with open(output_srt, "w", encoding="utf-8") as f_srt:
-            f_srt.write(submaker.generate_subs())
-    else:
-        await communicate.save(str(output_audio))
+    await communicate.save(str(output_audio))
 
 
 def run_async_safe(coroutine):
@@ -60,16 +45,15 @@ def run_async_safe(coroutine):
         return new_loop.run_until_complete(coroutine)
 
 
-def generate_scene_voiceover(text: str, anchor_type: str, output_path: Path, language: str = "hinglish", make_subtitles: bool = True) -> Path:
+def generate_scene_voiceover(text: str, anchor_type: str, output_path: Path, language: str = "hinglish", **kwargs) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    srt_path = output_path.with_suffix(".srt") if make_subtitles else None
 
     voice_id = resolve_voice_id(anchor_type, language)
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            run_async_safe(_generate_tts_with_subtitles(text, voice_id, output_path, srt_path))
+            run_async_safe(_generate_tts(text, voice_id, output_path))
             
             if output_path.exists() and output_path.stat().st_size > 500:
                 logging.info(f"✓ Voiceover ready ({voice_id}): {output_path.name}")
