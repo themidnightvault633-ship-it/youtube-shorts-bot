@@ -9,9 +9,14 @@ from google import genai
 from google.genai import types
 
 from config import (
-    API_KEY, MODEL_NAME, HISTORY_FILE, LONG_SCRIPT_FILE, 
+    API_KEY, MODEL_NAME, HISTORY_FILE, LONG_SCRIPT_FILE,
     NEWS_FEEDS, MAX_RETRIES, BREAKING_NEWS_KEYWORDS
 )
+
+try:
+    from config import FALLBACK_MODELS
+except ImportError:
+    FALLBACK_MODELS = [MODEL_NAME, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
 client = genai.Client(api_key=API_KEY)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -82,8 +87,8 @@ def generate_content_script(forced_category=None, force_anchor_gender=None):
     AI News Director:
     - National / Tech -> Punchy Hinglish
     - International -> Broadcast English
-    - Single Consistent Lead Anchor (Male ya Female)
-    - Topic-specific visuals & b-roll prompts
+    - Single Consistent Lead Anchor
+    - Pure event B-roll prompts for top screen (since bottom screen has live studio anchor)
     """
     history = read_json(HISTORY_FILE, {"episodes": []})
     used_titles = [ep.get("title", "") for ep in history.get("episodes", [])]
@@ -109,7 +114,7 @@ def generate_content_script(forced_category=None, force_anchor_gender=None):
             "Global Space Race Escalates with New Moon Exploration Missions"
         ]
 
-    anchor_gender = force_anchor_gender or random.choice(["female", "male"])
+    anchor_gender = force_anchor_gender or "female"
     target_language = "English" if target_category == "WORLD" else "Hinglish (Hindi written in English alphabets with high energy)"
 
     prompt = f"""
@@ -130,10 +135,11 @@ TASK:
 2. Produce a **35-45 second YouTube Short Script** (4 structured scenes).
 3. Produce a **Long-form In-depth Video Blueprint** (8-10 minutes) on the same topic.
 
-RULES:
+CRITICAL VISUAL RULES:
+- The bottom half of our video ALREADY shows the live TV News Anchor in the studio.
+- Therefore, each scene's `image_prompt` MUST describe ONLY the real-world news event, location, machinery, technology, parliament, infrastructure, or dramatic action B-roll — NEVER include a news anchor, studio presenter, or human portrait looking at the camera in `image_prompt`!
 - Narration language MUST strictly follow {target_language}.
 - Keep anchor persona consistent as `{anchor_gender}` across all scenes.
-- Each scene's `image_prompt` MUST be realistic news photography or studio b-roll describing the actual news event, photorealistic 8k vertical 9:16, no text.
 - Return ONLY valid JSON format.
 
 JSON STRUCTURE:
@@ -143,33 +149,33 @@ JSON STRUCTURE:
   "is_breaking": {str(is_breaking).lower()},
   "language": "{target_language}",
   "anchor_gender": "{anchor_gender}",
-  "title": "Shocking Clickable Short Title with Emojis #Shorts",
+  "title": "Shocking Clickable Short Title #Shorts",
   "description": "Engaging description with key takeaways and SEO tags",
-  "hashtags": ["#News", "#TechNews", "#Shorts"],
+  "hashtags": ["#News", "#BreakingNews", "#Shorts"],
   "scenes": [
     {{
       "scene_num": 1,
       "hook_type": "Headline Alert",
       "narration": "Opening hook in {target_language}",
-      "image_prompt": "Photorealistic 9:16 vertical visual of the news event, cinematic broadcast lighting, no text"
+      "image_prompt": "Wide-angle photorealistic news B-roll of the actual event location or technology, cinematic lighting, 8k, no people staring at camera, no text"
     }},
     {{
       "scene_num": 2,
       "hook_type": "Context & Facts",
       "narration": "Deep fact explanation in {target_language}",
-      "image_prompt": "Detailed contextual b-roll visual, 8k vertical 9:16, no text"
+      "image_prompt": "Close-up detailed journalistic B-roll showing the core subject/hardware/facility in action, 8k photorealistic, no text"
     }},
     {{
       "scene_num": 3,
       "hook_type": "Impact & Conflict",
       "narration": "Why this matters to the viewer in {target_language}",
-      "image_prompt": "Dramatic journalistic photo showing global or national impact, 9:16 vertical, no text"
+      "image_prompt": "Dramatic aerial or wide journalistic photo showing national or global scale impact, 8k photorealistic, no text"
     }},
     {{
       "scene_num": 4,
       "hook_type": "Conclusion & Question",
       "narration": "Closing remark and call to comment/subscribe in {target_language}",
-      "image_prompt": "Newsroom anchor studio desk with glowing world map monitors, 9:16 vertical, no text"
+      "image_prompt": "Futuristic high-tech global map projection and financial/strategic data screens in a dark command center, 8k photorealistic, no people, no text"
     }}
   ],
   "long_video_package": {{
@@ -180,10 +186,16 @@ JSON STRUCTURE:
 }}
 """
 
+    models_to_try = []
+    for m in [MODEL_NAME] + list(FALLBACK_MODELS):
+        if m and m not in models_to_try:
+            models_to_try.append(m)
+
     for attempt in range(1, MAX_RETRIES + 1):
+        current_model = models_to_try[(attempt - 1) % len(models_to_try)]
         try:
             response = client.models.generate_content(
-                model=MODEL_NAME,
+                model=current_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -198,17 +210,17 @@ JSON STRUCTURE:
                 long_pkg = data.get("long_video_package", {})
                 if long_pkg:
                     with open(LONG_SCRIPT_FILE, "w", encoding="utf-8") as f:
-                        f.write(f"# 🎬 LONG VIDEO BLUEPRINT ({data.get('category')})\n\n")
-                        f.write(f"## 📌 Topic: {data.get('topic_selected')}\n")
-                        f.write(f"### 🎯 Title: {long_pkg.get('long_title')}\n")
-                        f.write(f"### 🖼️ Thumbnail Concept:\n{long_pkg.get('thumbnail_idea')}\n\n")
-                        f.write(f"---\n\n## 📝 Full 8-Minute Script:\n\n{long_pkg.get('full_script_markdown')}\n")
+                        f.write(f"# LONG VIDEO BLUEPRINT ({data.get('category')})\n\n")
+                        f.write(f"## Topic: {data.get('topic_selected')}\n")
+                        f.write(f"### Title: {long_pkg.get('long_title')}\n")
+                        f.write(f"### Thumbnail Concept:\n{long_pkg.get('thumbnail_idea')}\n\n")
+                        f.write(f"---\n\n## Full 8-Minute Script:\n\n{long_pkg.get('full_script_markdown')}\n")
 
-                logging.info(f"✓ Script generated successfully: {data.get('title')}")
+                logging.info(f"✓ Script generated ({current_model}): {data.get('title')}")
                 return data
 
         except Exception as e:
-            logging.warning(f"Script generation retry {attempt}/{MAX_RETRIES}: {e}")
-            time.sleep(10)
+            logging.warning(f"Script generation retry {attempt}/{MAX_RETRIES} ({current_model}): {e}")
+            time.sleep(4)
 
-    raise RuntimeError("❌ Script generation failed after maximum retries.")
+    raise RuntimeError(
