@@ -19,7 +19,6 @@ RESAMPLE_FILTER = getattr(Image, "LANCZOS", getattr(Image, "ANTIALIAS", Image.BI
 
 
 def get_safe_font(size: int = 32):
-    """Loads TrueType bold font across Ubuntu/Windows, falling back safely."""
     font_candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
@@ -36,16 +35,10 @@ def get_safe_font(size: int = 32):
 
 
 def ascii_safe(text: str) -> str:
-    """Removes emojis and non-ASCII characters so PIL never crashes."""
     return text.encode("ascii", errors="ignore").decode("ascii").strip()
 
 
 def create_emergency_fallback(output_path: Path, width: int, height: int, headline_tag: str = "BREAKING NEWS"):
-    """
-    Creates a rich, bright TV Newsroom Visual Graphic card (with glowing world grid,
-    data rings, and wrapped story headline) if external image APIs time out,
-    so the screen never looks plain or black.
-    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -114,10 +107,10 @@ def download_scene_image(prompt: str, output_path: Path, is_short: bool = True, 
     target_w = custom_width or (SHORT_WIDTH if is_short else LONG_WIDTH)
     target_h = custom_height or ((SHORT_HEIGHT // 2) if is_short else LONG_HEIGHT)
 
-    req_w = 1024 if is_short else 1280
-    req_h = 910 if is_short else 720
+    req_w = 768 if is_short else 1024
+    req_h = 682 if is_short else 576
 
-    clean_prompt = ascii_safe(prompt)[:200]
+    clean_prompt = ascii_safe(prompt)[:180]
     enhanced_prompt = (
         f"{clean_prompt}, dramatic TV news broadcast B-roll photography, "
         f"ultra detailed, vibrant lighting, 8k, no text, no watermark"
@@ -125,20 +118,18 @@ def download_scene_image(prompt: str, output_path: Path, is_short: bool = True, 
     encoded_prompt = urllib.parse.quote(enhanced_prompt, safe="")
 
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36"}
-    models = ["flux", "turbo", "flux"]
+    models = ["turbo", "flux"]
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, 3):
         seed = random.randint(1000, 999999)
         model_name = models[(attempt - 1) % len(models)]
-        cur_w = req_w if attempt <= 2 else (768 if is_short else 960)
-        cur_h = req_h if attempt <= 2 else (682 if is_short else 540)
 
         image_url = (
-            f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-            f"?width={cur_w}&height={cur_h}&seed={seed}&model={model_name}&nologo=true"
+            f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){encoded_prompt}"
+            f"?width={req_w}&height={req_h}&seed={seed}&model={model_name}&nologo=true"
         )
         try:
-            response = requests.get(image_url, timeout=(15, 45), headers=headers)
+            response = requests.get(image_url, timeout=(8, 18), headers=headers)
             if response.status_code == 200 and len(response.content) > 4000:
                 temp_path = output_path.with_suffix(".tmp")
                 with open(temp_path, "wb") as f:
@@ -157,8 +148,8 @@ def download_scene_image(prompt: str, output_path: Path, is_short: bool = True, 
                 return output_path
 
         except Exception as e:
-            logging.warning(f"Image download retry {attempt}/{MAX_RETRIES}: {e}")
-            time.sleep(2)
+            logging.warning(f"Image download attempt {attempt}/2 timed out/failed: {e}")
+            time.sleep(1)
 
     logging.warning(f"⚠️ Using rich broadcast graphic fallback for: {output_path.name}")
     return create_emergency_fallback(output_path, target_w, target_h, headline_tag=clean_prompt)
