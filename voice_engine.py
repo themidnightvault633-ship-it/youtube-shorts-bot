@@ -21,7 +21,6 @@ def resolve_voice_id(anchor_type: str, language: str = "hinglish") -> str:
     anchor_type = anchor_type.lower()
     lang_key = "english" if "en" in anchor_type or language.lower() == "english" else "hinglish"
     gender_key = "female" if "female" in anchor_type else "male"
-    
     return VOICE_PERSONAS.get(lang_key, {}).get(gender_key) or VOICE_MAPPING.get(anchor_type, "hi-IN-SwaraNeural")
 
 
@@ -29,20 +28,15 @@ async def _generate_tts(text: str, voice_id: str, output_audio: Path):
     rate = "+10%" if "hi" in voice_id else "+12%"
     pitch = "-1Hz"
     communicate = edge_tts.Communicate(text=text, voice=voice_id, rate=rate, pitch=pitch)
-    await communicate.save(str(output_audio))
+    await asyncio.wait_for(communicate.save(str(output_audio)), timeout=25.0)
 
 
 def run_async_safe(coroutine):
+    new_loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            new_loop = asyncio.new_event_loop()
-            return new_loop.run_until_complete(coroutine)
-        else:
-            return loop.run_until_complete(coroutine)
-    except RuntimeError:
-        new_loop = asyncio.new_event_loop()
         return new_loop.run_until_complete(coroutine)
+    finally:
+        new_loop.close()
 
 
 def generate_scene_voiceover(text: str, anchor_type: str, output_path: Path, language: str = "hinglish", **kwargs) -> Path:
@@ -54,7 +48,6 @@ def generate_scene_voiceover(text: str, anchor_type: str, output_path: Path, lan
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             run_async_safe(_generate_tts(text, voice_id, output_path))
-            
             if output_path.exists() and output_path.stat().st_size > 500:
                 logging.info(f"✓ Voiceover ready ({voice_id}): {output_path.name}")
                 return output_path
