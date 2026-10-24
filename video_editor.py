@@ -4,12 +4,12 @@ from pathlib import Path
 # ================= PILLOW ANTIALIAS COMPATIBILITY PATCH =================
 import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, 'LANCZOS', PIL.Image.BICUBIC)
 if not hasattr(PIL.Image, 'LANCZOS'):
-    PIL.Image.LANCZOS = PIL.Image.Resampling.LANCZOS
+    PIL.Image.LANCZOS = PIL.Image.BICUBIC
 # ========================================================================
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from moviepy.editor import (
     ImageClip, VideoFileClip, AudioFileClip, 
@@ -25,21 +25,52 @@ from config import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
+def get_safe_font(size: int = 28):
+    font_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "arial.ttf"
+    ]
+    for path in font_candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def ascii_safe(text: str) -> str:
+    """Removes emojis and non-ASCII characters so PIL ImageDraw never throws latin-1 error."""
+    return text.encode("ascii", errors="ignore").decode("ascii").strip()
+
+
 def create_breaking_news_banner(width: int, height: int, title_text: str, is_breaking: bool = False) -> str:
     banner_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(banner_img)
+    font = get_safe_font(28)
 
-    tag_w = 260
-    tag_bg = (220, 20, 60, 255) if is_breaking else (180, 0, 0, 255)
+    tag_w = 270
+    tag_bg = (220, 20, 60, 255) if is_breaking else (185, 10, 20, 255)
     draw.rectangle([0, 0, tag_w, height], fill=tag_bg)
-    draw.text((25, height // 2 - 15), "🔴 BREAKING" if is_breaking else "⚡ TOP NEWS", fill=(255, 255, 255))
 
+    # Emoji ki jagah real graphic white circle
+    dot_r = 9
+    dot_x = 28
+    dot_y = height // 2
+    draw.ellipse([dot_x - dot_r, dot_y - dot_r, dot_x + dot_r, dot_y + dot_r], fill=(255, 255, 255))
+
+    label_text = "BREAKING" if is_breaking else "TOP NEWS"
+    draw.text((dot_x + 20, height // 2 - 16), label_text, fill=(255, 255, 255), font=font)
+
+    # Dark headline bar
     draw.rectangle([tag_w, 0, width, height], fill=(12, 18, 30, 240))
     
-    clean_title = title_text.replace("#Shorts", "").replace("#shorts", "").strip()
-    if len(clean_title) > 48:
-        clean_title = clean_title[:45] + "..."
-    draw.text((tag_w + 25, height // 2 - 15), clean_title, fill=(255, 255, 255))
+    clean_title = ascii_safe(title_text.replace("#Shorts", "").replace("#shorts", ""))
+    if not clean_title:
+        clean_title = "LATEST HEADLINE UPDATE"
+    if len(clean_title) > 42:
+        clean_title = clean_title[:39] + "..."
+    draw.text((tag_w + 25, height // 2 - 16), clean_title, fill=(255, 255, 255), font=font)
 
     temp_banner_path = ASSETS_DIR / "temp_banner.png"
     banner_img.save(temp_banner_path, "PNG")
