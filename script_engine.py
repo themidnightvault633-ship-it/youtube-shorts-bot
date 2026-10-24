@@ -16,7 +16,7 @@ from config import (
 try:
     from config import FALLBACK_MODELS
 except ImportError:
-    FALLBACK_MODELS = [MODEL_NAME, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    FALLBACK_MODELS = [MODEL_NAME, "gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
 client = genai.Client(api_key=API_KEY)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -223,4 +223,4 @@ JSON STRUCTURE:
             logging.warning(f"Script generation retry {attempt}/{MAX_RETRIES} ({current_model}): {e}")
             time.sleep(4)
 
-    raise RuntimeError(
+    raise RuntimeError("❌ Script generation failed after maximum retries.")
