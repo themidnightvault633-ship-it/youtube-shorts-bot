@@ -6,20 +6,40 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
     raise RuntimeError("❌ GEMINI_API_KEY missing hai! GitHub Secrets ya Environment Variable mein set karein.")
 
-# Latest Google Gemini Model
+# Primary model (with automatic fallback list in script_engine.py)
 MODEL_NAME = "gemini-3.8-flash"
+FALLBACK_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+]
 
 # ================= 2. DIRECTORIES & PATHS =================
 BASE_DIR = Path("AI_NEWS_CHANNEL_OUTPUT")
-BASE_DIR.mkdir(exist_ok=True)
+BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 SHORTS_DIR = BASE_DIR / "shorts"
 LONG_DIR = BASE_DIR / "long_videos"
-ASSETS_DIR = Path("assets")
 
-SHORTS_DIR.mkdir(exist_ok=True)
-LONG_DIR.mkdir(exist_ok=True)
-ASSETS_DIR.mkdir(exist_ok=True)
+# Safely handle case where 'assets' was created as a plain file on GitHub
+ASSETS_DIR = Path("assets")
+if ASSETS_DIR.exists() and not ASSETS_DIR.is_dir():
+    try:
+        if ASSETS_DIR.stat().st_size < 100:
+            ASSETS_DIR.unlink()
+            ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        else:
+            ASSETS_DIR = BASE_DIR / "assets"
+            ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        ASSETS_DIR = BASE_DIR / "assets"
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+SHORTS_DIR.mkdir(parents=True, exist_ok=True)
+LONG_DIR.mkdir(parents=True, exist_ok=True)
 
 HISTORY_FILE = BASE_DIR / "news_history.json"
 LONG_SCRIPT_FILE = BASE_DIR / "latest_long_video_script.md"
@@ -72,9 +92,9 @@ VOICE_PERSONAS = {
 }
 
 # ================= 6. 24/7 BACKGROUND MONITOR & SCHEDULES =================
-MONITOR_CHECK_INTERVAL_SECONDS = 600
+MONITOR_CHECK_INTERVAL_SECONDS = 600  # 10 minutes
 BREAKING_NEWS_KEYWORDS = [
-    "breaking", "urgent", "war", "earthquake", "attack", "crisis", 
+    "breaking", "urgent", "war", "earthquake", "attack", "crisis",
     "resigns", "explosion", "emergency", "dead", "banned", "launched", "crash"
 ]
 
