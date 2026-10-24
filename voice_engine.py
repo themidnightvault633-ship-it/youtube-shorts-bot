@@ -67,7 +67,10 @@ def generate_scene_voiceover(text: str, anchor_type: str, output_path: Path, lan
 
 def get_audio_duration(audio_path: Path) -> float:
     try:
-        from moviepy.editor import AudioFileClip
+        try:
+            from moviepy.editor import AudioFileClip
+        except ImportError:
+            from moviepy import AudioFileClip
         clip = AudioFileClip(str(audio_path))
         duration = clip.duration
         clip.close()
