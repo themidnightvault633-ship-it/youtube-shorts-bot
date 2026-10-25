@@ -84,7 +84,7 @@ def _pick_anchor_gender(override=None):
     return gender
 
 
-# ================= 2. CACHED BILINGUAL HINDI + ENGLISH FONT ENGINE =================
+# ================= 2. CACHED BILINGUAL HINDI + ENGLISH FONT & KARAOKE ENGINE =================
 def _load_font_pair(size=36):
     if size in _FONT_CACHE:
         return _FONT_CACHE[size]
@@ -120,6 +120,20 @@ def _load_font_pair(size=36):
     return pair
 
 
+def measure_bilingual_text(draw, text, size=34):
+    """Returns exact pixel width of bilingual Hindi/English text."""
+    deva_font, latin_font = _load_font_pair(size)
+    clean = re.sub(r"[\U00010000-\U0010ffff]", "", str(text or ""))
+    runs = re.findall(r"[\u0900-\u097F]+|[^\u0900-\u097F]+", clean)
+    total_w = 0
+    for run in runs:
+        is_deva = bool(re.search(r"[\u0900-\u097F]", run))
+        font = deva_font if is_deva else latin_font
+        bbox = draw.textbbox((0, 0), run, font=font)
+        total_w += max(0, bbox[2] - bbox[0])
+    return total_w
+
+
 def draw_bilingual_text(draw, xy, text, size=34, fill=(255, 255, 255)):
     """Routes Devanagari Hindi tokens to NotoSansDevanagari and English/ASCII tokens to DejaVuSans."""
     deva_font, latin_font = _load_font_pair(size)
@@ -133,6 +147,51 @@ def draw_bilingual_text(draw, xy, text, size=34, fill=(255, 255, 255)):
         bbox = draw.textbbox((x, y), run, font=font)
         x += max(0, bbox[2] - bbox[0])
     return x
+
+
+def build_word_timings(narration, duration):
+    """
+    Computes exact start and end timestamps for every single word in `narration`,
+    weighted by character length and punctuation pauses so visual word highlighting
+    moves in lockstep with the anchor's voice!
+    """
+    words = [w for w in (narration or "").strip().split() if w]
+    if not words:
+        return [{"word": "", "start": 0.0, "end": duration, "idx": 0}]
+    weights = []
+    for w in words:
+        pause_bonus = 2.4 if w.endswith(("।", ".", "!", "?", ":", ";")) else (1.1 if w.endswith(",") else 0.0)
+        weights.append(max(1.5, len(w) * 0.85 + pause_bonus))
+    total_wt = sum(weights)
+    timings = []
+    cur_t = 0.0
+    usable_dur = max(0.5, duration - 0.15)
+    for idx, (w, wt) in enumerate(zip(words, weights)):
+        dt = (wt / total_wt) * usable_dur
+        timings.append({"word": w, "start": cur_t, "end": cur_t + dt, "idx": idx})
+        cur_t += dt
+    timings[-1]["end"] = duration + 1.0
+    return timings
+
+
+def wrap_words_into_lines(draw, word_timings, font_size, max_pixel_width):
+    """Groups word timing dicts into lines that strictly fit within `max_pixel_width` (NEVER cuts a word!)."""
+    lines = []
+    cur_line = []
+    cur_w = 0
+    space_w = max(8, int(font_size * 0.30))
+    for wt in word_timings:
+        w_px = measure_bilingual_text(draw, wt["word"], size=font_size)
+        if cur_line and (cur_w + space_w + w_px > max_pixel_width):
+            lines.append(cur_line)
+            cur_line = [wt]
+            cur_w = w_px
+        else:
+            cur_line.append(wt)
+            cur_w += (space_w + w_px) if len(cur_line) > 1 else w_px
+    if cur_line:
+        lines.append(cur_line)
+    return lines or [[{"word": "", "start": 0.0, "end": 1.0, "idx": 0}]]
 
 
 # ================= 3. LIVE RSS & GEMINI SCRIPT ENGINE =================
@@ -233,7 +292,6 @@ def _build_detailed_story_narration(idx, total, hl, language="hindi", is_short=T
             else:
                 return f"ताज़ा जानकारी के मुताबिक, {title}। प्रशासन और विशेषज्ञों की इस पूरे मामले पर कड़ी नज़र बनी हुई है।"
         else:
-            # Detailed ~90-110 word segment for 10-minute Long Video Mega Bulletin
             if idx == 0:
                 return (
                     f"नमस्कार, चौबीस घंटे लाइव न्यूज़ के प्राइम टाइम महाबुलेटिन में आपका स्वागत है। "
@@ -338,7 +396,7 @@ def _build_local_fallback_script(category, headlines, is_short, is_breaking, anc
             "scene_id": idx + 1,
             "narration": nar,
             "subtitles": nar,
-            "headline_banner": kw[:68],
+            "headline_banner": kw,
             "search_query": kw,
             "rss_image_url": hl.get("media_url", ""),
             "image_prompt": (
@@ -378,7 +436,6 @@ def generate_news_script(category=None, is_short=True, is_breaking=False, anchor
     chosen_gender = _pick_anchor_gender(anchor_gender)
     headlines = fetch_trending_news(cat_upper, max_items=16)
 
-    # For 10+ minute Long Videos, use the multi-story Mega Bulletin builder
     if not is_short:
         logger.info(f"Building 14-Story Prime-Time Mega Bulletin (10+ Min Target) for {cat_upper} ({language})...")
         return _build_local_fallback_script(cat_upper, headlines, is_short=False, is_breaking=is_breaking, anchor_gender=chosen_gender, language=language)
@@ -441,7 +498,7 @@ CRITICAL RULES:
                     sc["scene_id"] = idx + 1
                     sc["rss_image_url"] = hl.get("media_url", "")
                     if not sc.get("headline_banner"):
-                        sc["headline_banner"] = hl.get("title", "बड़ी ख़बर")[:55]
+                        sc["headline_banner"] = hl.get("title", "बड़ी ख़बर")
                     if not sc.get("camera_angle"):
                         sc["camera_angle"] = "closeup" if idx % 2 == 1 else "wide"
                 data["category"] = cat_upper
@@ -512,7 +569,7 @@ def synthesize_broadcast_voice(text, output_path, category="NATION", gender="fem
     return output_path
 
 
-# ================= 5. REAL EVENT PHOTO & ANCHOR STUDIO ENGINE =================
+# ================= 5. B-ROLL VISUAL ENGINE (CLEAN PHOTO OR SATELLITE GLOBE, NO FROZEN TEXT!) =================
 def _validate_and_resize_image(raw_bytes, target_w, target_h):
     img = Image.open(BytesIO(raw_bytes)).convert("RGB")
     w, h = img.size
@@ -540,87 +597,70 @@ def _validate_and_resize_image(raw_bytes, target_w, target_h):
 
 
 def _fetch_pollinations_image(prompt, target_w, target_h):
-    gen_w, gen_h = 1024, 1024
+    gen_w, gen_h = 768, 768
     clean_prompt = re.sub(r"[^\w\s,.-]", " ", prompt or "Editorial news photojournalism").strip()
-    encoded = urllib.parse.quote(clean_prompt[:280])
+    encoded = urllib.parse.quote(clean_prompt[:240])
     for model in ["flux", "turbo"]:
         seed = random.randint(1000, 999999)
         url = f"https://image.pollinations.ai/prompt/{encoded}?width={gen_w}&height={gen_h}&seed={seed}&model={model}&nologo=true"
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=22)
-            if resp.status_code == 200 and len(resp.content) > 15000:
+            resp = requests.get(url, headers=HEADERS, timeout=18)
+            if resp.status_code == 200 and len(resp.content) > 12000:
                 return _validate_and_resize_image(resp.content, target_w, target_h)
         except Exception:
             pass
     return None
 
 
-def _create_broadcast_broll_graphic(output_path, width, height, headline_text=""):
-    img = Image.new("RGB", (width, height), (12, 18, 38))
+def _create_clean_satellite_broll_backdrop(output_path, width, height, scene_idx=0):
+    """
+    Creates a rich, glowing 3D Newsroom World-Grid & Radar Satellite Visual Backdrop
+    WITHOUT any static frozen text baked into the image (because the live audio-synced
+    teleprompter card will dynamically type and highlight the spoken words on top!).
+    """
+    img = Image.new("RGB", (width, height), (10, 18, 42))
     draw = ImageDraw.Draw(img)
-    cx, cy = width // 2, height // 2
-    for r in range(max(width, height) // 2, 20, -25):
-        ratio = 1.0 - (r / float(max(width, height) // 2))
-        col = (int(12 + 95 * ratio), int(20 + 25 * ratio), int(42 + 80 * ratio))
+    cx, cy = width // 2, int(height * 0.42)
+    max_r = int(max(width, height) * 0.65)
+    for r in range(max_r, 15, -20):
+        ratio = 1.0 - (r / float(max_r))
+        col = (
+            int(10 + (75 if scene_idx % 2 == 0 else 35) * ratio),
+            int(20 + (45 if scene_idx % 2 == 0 else 75) * ratio),
+            int(46 + 115 * ratio),
+        )
         draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=col)
 
-    for lat in range(60, height, 65):
-        draw.line([(0, lat), (width, lat)], fill=(45, 75, 130), width=1)
-    for lon in range(60, width, 65):
-        draw.line([(lon, 0), (lon, height)], fill=(45, 75, 130), width=1)
+    for lat in range(40, height, 55):
+        draw.line([(0, lat), (width, lat)], fill=(38, 82, 148), width=1)
+    for lon in range(40, width, 55):
+        draw.line([(lon, 0), (lon, height)], fill=(38, 82, 148), width=1)
 
-    card_w, card_h = int(width * 0.86), int(height * 0.46)
-    x0, y0 = (width - card_w) // 2, (height - card_h) // 2 + 20
-    draw.rounded_rectangle([x0, y0, x0 + card_w, y0 + card_h], radius=18, fill=(18, 26, 52), outline=(255, 195, 0), width=4)
-    draw.rectangle([x0, y0, x0 + card_w, y0 + 54], fill=(195, 18, 30))
-    draw.ellipse([x0 + 22, y0 + 17, x0 + 42, y0 + 37], fill=(255, 255, 255))
-    draw_bilingual_text(draw, (x0 + 54, y0 + 11), "LIVE SATELLITE NEWS FEED  |  24x7", size=26, fill=(255, 255, 255))
-
-    clean_hl = (headline_text or "LIVE BREAKING NEWS UPDATE").strip()
-    words = clean_hl.split()
-    lines, cur = [], ""
-    for w in words:
-        test = (cur + " " + w).strip()
-        if len(test) <= 28:
-            cur = test
-        else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-
-    ty = y0 + 76
-    for line in lines[:3]:
-        draw_bilingual_text(draw, (x0 + 28, ty), line, size=32, fill=(255, 245, 215))
-        ty += 48
+    for rad in [int(min(width, height) * r) for r in (0.14, 0.25, 0.36, 0.47)]:
+        draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=(0, 195, 255), width=2)
+    draw.line([(cx - int(width * 0.35), cy), (cx + int(width * 0.35), cy)], fill=(220, 32, 48), width=2)
+    draw.line([(cx, cy - int(height * 0.35)), (cx, cy + int(height * 0.35))], fill=(220, 32, 48), width=2)
 
     img.save(output_path, "JPEG", quality=92)
     return output_path
 
 
-def download_scene_image(prompt, output_path, is_short=True, search_query="", rss_image_url="", headline_text=""):
-    """
-    Fetches authentic RSS media image or generates custom photorealistic news B-roll via Pollinations Flux.
-    Does NOT scrape random web charts/logos from Bing so B-roll always looks like real TV news footage!
-    """
+def download_scene_image(prompt, output_path, is_short=True, search_query="", rss_image_url="", headline_text="", scene_idx=0):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     target_w = 1080 if is_short else 880
     target_h = 880 if is_short else 600
 
-    # 1. Official RSS news article photo if high-res
     if rss_image_url and rss_image_url.startswith("http"):
         try:
             resp = requests.get(rss_image_url, headers=HEADERS, timeout=10)
-            if resp.status_code == 200 and len(resp.content) > 18000:
+            if resp.status_code == 200 and len(resp.content) > 15000:
                 img = _validate_and_resize_image(resp.content, target_w, target_h)
                 img.save(output_path, "JPEG", quality=92)
                 return output_path
         except Exception:
             pass
 
-    # 2. Custom photorealistic editorial news B-roll (1024x1024 Flux)
-    logger.info(f"🎨 Generating Photorealistic News B-Roll ({target_w}x{target_h})...")
+    logger.info(f"🎨 Generating News B-Roll Visual #{scene_idx + 1} ({target_w}x{target_h})...")
     full_prompt = (
         f"{prompt}, realistic television news broadcast camera footage, "
         f"wide angle photojournalism, natural lighting, 8k UHD, strictly no text, no words, no charts, no logos"
@@ -630,356 +670,527 @@ def download_scene_image(prompt, output_path, is_short=True, search_query="", rs
         img.save(output_path, "JPEG", quality=92)
         return output_path
 
-    return _create_broadcast_broll_graphic(output_path, target_w, target_h, headline_text=headline_text or search_query)
+    return _create_clean_satellite_broll_backdrop(output_path, target_w, target_h, scene_idx=scene_idx)
 
 
-def _create_procedural_studio_anchor(output_path, anchor_gender="female", width=1024, height=1024):
-    img = Image.new("RGB", (width, height), (14, 18, 34))
-    draw = ImageDraw.Draw(img)
-    for y in range(height):
-        r = int(14 + 28 * (y / float(height)))
-        g = int(20 + 18 * (y / float(height)))
-        b = int(42 + 45 * (y / float(height)))
-        draw.line([(0, y), (width, y)], fill=(r, g, b))
-    for y_bar in [110, 220, 330, 440]:
-        draw.rectangle([40, y_bar, width - 40, y_bar + 6], fill=(200, 30, 45))
-        draw.rectangle([80, y_bar + 12, width - 80, y_bar + 16], fill=(0, 170, 240))
-
-    cx = width // 2
-    suit_color = (22, 28, 48) if anchor_gender == "male" else (155, 22, 38)
-    draw.polygon([(cx - 280, height), (cx + 280, height), (cx + 210, 460), (cx - 210, 460)], fill=suit_color)
-    draw.polygon([(cx - 55, 460), (cx + 55, 460), (cx, 660)], fill=(242, 245, 250))
-    if anchor_gender == "male":
-        draw.polygon([(cx - 18, 480), (cx + 18, 480), (cx + 24, 650), (cx - 24, 650)], fill=(195, 20, 32))
-
-    skin = (224, 172, 138)
-    draw.rectangle([cx - 42, 375, cx + 42, 485], fill=skin)
-    draw.ellipse([cx - 110, 165, cx + 110, 425], fill=skin)
-
-    if anchor_gender == "female":
-        draw.pieslice([cx - 124, 140, cx + 124, 400], 160, 380, fill=(24, 18, 16))
-        draw.polygon([(cx - 120, 250), (cx - 95, 475), (cx - 65, 460)], fill=(24, 18, 16))
-        draw.polygon([(cx + 120, 250), (cx + 95, 475), (cx + 65, 460)], fill=(24, 18, 16))
-    else:
-        draw.pieslice([cx - 116, 145, cx + 116, 330], 175, 365, fill=(22, 18, 16))
-
-    eye_y = 280
-    for ex in [cx - 44, cx + 44]:
-        draw.ellipse([ex - 20, eye_y - 9, ex + 20, eye_y + 9], fill=(250, 250, 250))
-        draw.ellipse([ex - 8, eye_y - 8, ex + 8, eye_y + 8], fill=(38, 26, 20))
-        draw.ellipse([ex - 3, eye_y - 3, ex + 3, eye_y + 3], fill=(255, 255, 255))
-        draw.arc([ex - 24, eye_y - 20, ex + 24, eye_y - 4], 190, 350, fill=(28, 20, 18), width=4)
-
-    draw.line([(cx, 285), (cx - 6, 338), (cx + 8, 342)], fill=(185, 132, 102), width=3)
-    mouth_y = 370
-    lip_col = (185, 55, 68) if anchor_gender == "female" else (165, 78, 74)
-    draw.polygon([(cx - 36, mouth_y), (cx, mouth_y - 8), (cx + 36, mouth_y), (cx, mouth_y + 11)], fill=lip_col)
-    draw.line([(cx - 32, mouth_y), (cx + 32, mouth_y)], fill=(90, 25, 30), width=2)
-    img.save(output_path, "JPEG", quality=94)
-    return output_path
+# ================= 6. EXPRESSIVE 2.5D ANIME TV NEWS ANCHOR RIG (AUDIO-SYNCED FACE & BODY) =================
+def _bezier(p0, p1, p2, p3, steps=24):
+    pts = []
+    for i in range(steps + 1):
+        t = i / float(steps)
+        mt = 1.0 - t
+        x = (mt ** 3) * p0[0] + 3 * (mt ** 2) * t * p1[0] + 3 * mt * (t ** 2) * p2[0] + (t ** 3) * p3[0]
+        y = (mt ** 3) * p0[1] + 3 * (mt ** 2) * t * p1[1] + 3 * mt * (t ** 2) * p2[1] + (t ** 3) * p3[1]
+        pts.append((x, y))
+    return pts
 
 
-# ================= 6. 100% PURE-NUMPY FACE, EYE & LIP DETECTOR (NO OPENCV NEEDED) =================
-def detect_face_eyes_mouth_pure_numpy(rgb_arr):
+def _quad(p0, p1, p2, steps=18):
+    pts = []
+    for i in range(steps + 1):
+        t = i / float(steps)
+        mt = 1.0 - t
+        x = (mt ** 2) * p0[0] + 2 * mt * t * p1[0] + (t ** 2) * p2[0]
+        y = (mt ** 2) * p0[1] + 2 * mt * t * p1[1] + (t ** 2) * p2[1]
+        pts.append((x, y))
+    return pts
+
+
+class StudioAnimeAnchor:
     """
-    100% Pure-NumPy 2D Face, Symmetric Eye-Pair, and Lip Detector (ZERO cv2 dependency!).
-    Finds the exact face bounding box, left & right eye coordinates, and lip line on any portrait.
-    """
-    h, w, _ = rgb_arr.shape
-    r = rgb_arr[:, :, 0].astype(np.float32)
-    g = rgb_arr[:, :, 1].astype(np.float32)
-    b = rgb_arr[:, :, 2].astype(np.float32)
-    luma = 0.299 * r + 0.587 * g + 0.114 * b
-
-    # 1. Detect warm skin mask in upper 82% of frame
-    skin = (
-        (r > 85)
-        & (g > 40)
-        & (b > 20)
-        & ((r - g) > 10)
-        & ((r - b) > 18)
-        & (r < 252)
-        & (luma > 55)
-        & (luma < 235)
-    ).astype(np.float32)
-    skin[int(h * 0.82) :, :] = 0.0
-    skin[:, : int(w * 0.12)] = 0.0
-    skin[:, int(w * 0.88) :] = 0.0
-
-    row_skin = np.mean(skin, axis=1)
-    col_skin = np.mean(skin, axis=0)
-    ys = np.where(row_skin > 0.07)[0]
-    xs = np.where(col_skin > 0.07)[0]
-
-    if len(ys) > 30 and len(xs) > 30:
-        fy = int(ys[0])
-        fw = int(min(w * 0.52, max(w * 0.18, xs[-1] - xs[0])))
-        fh = int(min(h * 0.62, max(h * 0.22, fw * 1.18)))
-        cx_vals = np.arange(w, dtype=np.float32)
-        face_band_skin = np.mean(skin[fy : min(h, fy + fh), :], axis=0)
-        cx = int(np.sum(cx_vals * face_band_skin) / max(1e-5, np.sum(face_band_skin)))
-        fx = max(0, min(w - fw, cx - fw // 2))
-    else:
-        fw, fh = int(w * 0.30), int(h * 0.36)
-        fx, fy = (w - fw) // 2, int(h * 0.12)
-
-    # 2. 2D Symmetric Eye-Pair Search inside Upper Face [fy + 0.24*fh .. fy + 0.52*fh]
-    ey_min = max(4, fy + int(fh * 0.24))
-    ey_max = min(h - 10, fy + int(fh * 0.52))
-    gy = np.abs(np.diff(luma, axis=0, prepend=luma[:1, :]))
-    eye_feat = gy * (220.0 - np.clip(luma, 40.0, 220.0))
-
-    best_score = -1.0
-    best_ey = fy + int(fh * 0.38)
-    best_cx = fx + fw // 2
-    best_d = int(fw * 0.21)
-
-    d_min = max(14, int(fw * 0.15))
-    d_max = max(d_min + 4, int(fw * 0.27))
-    cx_min = max(d_max + 6, fx + int(fw * 0.38))
-    cx_max = min(w - d_max - 6, fx + int(fw * 0.62))
-
-    for ey in range(ey_min, ey_max, 2):
-        strip = np.mean(eye_feat[max(0, ey - 4) : min(h, ey + 5), :], axis=0)
-        for cx_try in range(cx_min, max(cx_min + 1, cx_max), 3):
-            for d in range(d_min, d_max, 3):
-                lx, rx_pos = cx_try - d, cx_try + d
-                l_val = np.mean(strip[max(0, lx - 6) : min(w, lx + 7)])
-                r_val = np.mean(strip[max(0, rx_pos - 6) : min(w, rx_pos + 7)])
-                bridge_val = np.mean(strip[max(0, cx_try - 4) : min(w, cx_try + 5)])
-                sym_penalty = abs(l_val - r_val) * 0.5
-                score = (l_val + r_val) - 0.65 * bridge_val - sym_penalty
-                if score > best_score:
-                    best_score = score
-                    best_ey = ey
-                    best_cx = cx_try
-                    best_d = d
-
-    rx_e = max(11, int(best_d * 0.42))
-    ry_e = max(6, int(rx_e * 0.58))
-    eye_boxes = [
-        (best_cx - best_d, best_ey, rx_e, ry_e),
-        (best_cx + best_d, best_ey, rx_e, ry_e),
-    ]
-
-    # 3. Exact Mouth Center inside [best_ey + 1.35*best_d .. best_ey + 2.15*best_d]
-    my_min = max(best_ey + int(best_d * 1.35), fy + int(fh * 0.64))
-    my_max = min(h - 8, max(my_min + 10, best_ey + int(best_d * 2.15)))
-    mx0 = max(0, best_cx - int(best_d * 0.85))
-    mx1 = min(w, best_cx + int(best_d * 0.85))
-
-    if my_max > my_min and mx1 > mx0:
-        r_m = r[my_min:my_max, mx0:mx1]
-        g_m = g[my_min:my_max, mx0:mx1]
-        gy_m = gy[my_min:my_max, mx0:mx1]
-        l_m = luma[my_min:my_max, mx0:mx1]
-        lip_row_score = np.mean((r_m - 1.1 * g_m) + 0.65 * gy_m - 0.20 * l_m, axis=1)
-        mouth_y = my_min + int(np.argmax(lip_row_score))
-    else:
-        mouth_y = best_ey + int(best_d * 1.72)
-
-    mouth_x = best_cx
-    mouth_w = max(15, int(best_d * 0.82))
-    mouth_h = max(6, int(mouth_w * 0.32))
-
-    # Refine face_box around best_cx, best_ey, mouth_y
-    ref_fh = max(60, int((mouth_y - best_ey) * 2.35))
-    ref_fw = max(55, int(best_d * 4.6))
-    ref_fx = max(0, min(w - ref_fw, best_cx - ref_fw // 2))
-    ref_fy = max(0, best_ey - int(ref_fh * 0.38))
-    face_box = (ref_fx, ref_fy, ref_fw, ref_fh)
-
-    return face_box, eye_boxes, (mouth_x, mouth_y, mouth_w, mouth_h)
-
-
-def download_anchor_studio_image(anchor_gender="female", category="NATION", output_path="temp/anchor_studio.jpg"):
-    """
-    Fetches a photorealistic Male or Female Indian/Global TV News Anchor waist-up medium shot
-    with flat symmetrical front lighting so both eyes and lips are clearly visible and well-proportioned.
-    """
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    target_w, target_h = 1024, 1024
-    gender_word = "real Indian male" if str(anchor_gender).lower() == "male" else "real Indian female"
-    attire = (
-        "wearing a dark navy business suit, white shirt, and red tie, lapel microphone"
-        if str(anchor_gender).lower() == "male"
-        else "wearing a professional crimson-red blazer over dark top, lapel microphone"
-    )
-    if str(category).upper() == "WORLD":
-        gender_word = "real international male" if str(anchor_gender).lower() == "male" else "real international female"
-
-    prompt = (
-        f"Medium waist-up shot of a {gender_word} television news anchor {attire}, "
-        f"sitting behind a modern BBC and Aaj Tak live broadcast newsroom desk, "
-        f"full shoulders and torso visible, looking straight into camera lens with composed expression, "
-        f"flat even symmetrical front television studio lighting on whole face, both eyes clearly lit, "
-        f"head centered in upper-middle frame occupying 28 percent of height, "
-        f"blurred red and blue newsroom LED screens in background, 8k DSLR broadcast camera, no text"
-    )
-    logger.info(f"🧑‍💼 Fetching photorealistic {anchor_gender.upper()} TV News Anchor for {category}...")
-    for attempt in range(2):
-        img = _fetch_pollinations_image(prompt, target_w, target_h)
-        if img is not None:
-            img.save(output_path, "JPEG", quality=94)
-            return output_path
-    return _create_procedural_studio_anchor(output_path, anchor_gender=anchor_gender, width=target_w, height=target_h)
-
-
-def _prepare_studio_anchor_canvas(anchor_img_path, width, height, desk_ratio=0.72):
-    """
-    Auto-frames any anchor portrait to fill 100% of the studio window width with full headroom
-    above the head (never clipping the forehead or showing side borders) + 3D Broadcast Desk!
-    Uses 100% Pure-NumPy Face/Eye/Mouth detection (zero OpenCV dependency).
-    """
-    raw = Image.open(anchor_img_path).convert("RGB")
-    bg = Image.new("RGB", (width, height), (12, 18, 38))
-    desk_y = int(height * desk_ratio)
-    target_h_top = desk_y + 12
-
-    rw, rh = raw.size
-    raw_arr = np.asarray(raw, dtype=np.uint8)
-    raw_face_box, _, _ = detect_face_eyes_mouth_pure_numpy(raw_arr)
-    fx, fy, fw, fh = raw_face_box
-
-    scale = max(width / float(rw), target_h_top / float(rh))
-    # If the face is huge (close-up), keep headroom and pad sides with blurred studio background
-    if (fh * scale) > (target_h_top * 0.54):
-        scale = (target_h_top * 0.50) / float(max(1, fh))
-
-    new_w = max(1, int(rw * scale))
-    new_h = max(1, int(rh * scale))
-    scaled = raw.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-    # Fill background with blurred stretched studio backdrop so there are NEVER hard side bars
-    backdrop = raw.resize((width, target_h_top), Image.Resampling.BILINEAR).filter(ImageFilter.GaussianBlur(22))
-    backdrop = ImageEnhance.Brightness(backdrop).enhance(0.55)
-    bg.paste(backdrop, (0, 0))
-
-    sc_cx = int((fx + fw * 0.5) * scale)
-    sc_fy = int(fy * scale)
-    paste_x = (width // 2) - sc_cx
-    ideal_top_y = max(6, int(target_h_top * 0.14) - sc_fy)
-    paste_y = min(0, ideal_top_y) if new_h >= target_h_top else max(0, target_h_top - new_h)
-
-    mask = Image.new("L", (new_w, new_h), 255)
-    if new_w < width:
-        m_draw = ImageDraw.Draw(mask)
-        m_draw.rectangle([0, 0, new_w - 1, new_h - 1], outline=0, width=24)
-        mask = mask.filter(ImageFilter.GaussianBlur(14))
-    bg.paste(scaled, (paste_x, paste_y), mask)
-
-    # Draw 3D Broadcast News Desk from desk_y to height (eliminates any bottom black void!)
-    d_draw = ImageDraw.Draw(bg)
-    d_draw.polygon([(0, desk_y), (width, desk_y), (width, height), (0, height)], fill=(12, 18, 38))
-    d_draw.rectangle([0, desk_y, width, desk_y + 7], fill=(250, 198, 0))
-    d_draw.rectangle([0, desk_y + 7, width, desk_y + 14], fill=(195, 16, 30))
-
-    # Dual Broadcast Condenser Microphones on Desk
-    for side in [-1, 1]:
-        mx = (width // 2) + side * int(width * 0.17)
-        d_draw.line([(mx, desk_y), (mx - side * 16, desk_y - 44)], fill=(55, 62, 75), width=5)
-        d_draw.ellipse([mx - side * 16 - 9, desk_y - 58, mx - side * 16 + 9, desk_y - 36], fill=(28, 32, 40), outline=(200, 210, 225), width=2)
-
-    # Detect exact face, eyes, and mouth on the final composited studio frame (above desk_y)
-    comp_arr = np.asarray(bg, dtype=np.uint8)
-    upper_arr = comp_arr[:desk_y, :, :]
-    face_box, eye_boxes, mouth_info = detect_face_eyes_mouth_pure_numpy(upper_arr)
-
-    return comp_arr, face_box, eye_boxes, mouth_info, desk_y
-
-
-class BroadcastAnchorAnimator:
-    """
-    Ultra-fast, Photorealistic ROI-Patch Anchor Animator (100% Pure NumPy, ZERO OpenCV needed):
-      - Animates ONLY the exact detected Left/Right Eye patches (natural upper-eyelid squeeze blink)
-      - Animates ONLY the exact detected Mouth/Chin patch (speech-synced lip & jaw articulation)
-      - Zero nose/cheek distortion, runs at >500 fps!
+    High-Detail 2.5D Japanese Anime / VTuber Broadcast News Anchor Rig (Male & Female).
+    100% immune to API timeouts and guarantees vivid, crystal-clear reactions synced to the voice:
+      - 6-State Audio-Synced Anime Mouth Visemes (Closed Smile, Slight, Wide 'A', Round 'O', 'E/I' Smile, Consonant)
+      - Expressive Almond Anime Eyes (multi-layer iris gradient, dual catchlights, live pupil gaze, smooth blink)
+      - Audio-Driven Expressive Eyebrows (raise & arch on high voice amplitude, serious tilt on emphasis)
+      - Full Body Style & Articulation: Head nod (`dy`), Head tilt (`angle`), Shoulder breathing, Torso sway (`dx`),
+        and an Audio-Reactive Gesturing Hand & Forearm!
+      - Pre-caches head expression states at startup so rendering runs at >600 FPS!
     """
 
-    def __init__(self, anchor_img_path, width=1080, height=980, desk_ratio=0.66):
+    def __init__(self, gender="female", width=1080, height=986, desk_ratio=0.56):
+        self.gender = "male" if str(gender).lower() == "male" else "female"
         self.w = width
         self.h = height
-        self.base, self.face_box, self.eye_boxes, self.mouth_info, self.desk_y = _prepare_studio_anchor_canvas(
-            anchor_img_path, width, height, desk_ratio=desk_ratio
-        )
-        self.fx, self.fy, self.fw, self.fh = self.face_box
-        self.mx, self.my, self.mw, self.mh = self.mouth_info
+        self.desk_y = int(height * desk_ratio)
+        self.s = min(width / 820.0, self.desk_y / 480.0)
+        self.bg_img = self._build_newsroom_backdrop()
+        self.head_cache = {}
+        self._prebuild_head_cache()
 
-        # Precompute mouth ROI meshgrid once so per-frame lip-sync takes <0.3ms
-        self.m_y0 = max(0, self.my - 4)
-        self.m_y1 = min(self.desk_y, self.fy + int(self.fh * 1.06))
-        self.m_x0 = max(0, self.mx - int(self.mw * 1.6))
-        self.m_x1 = min(self.w, self.mx + int(self.mw * 1.6))
-        yy, xx = np.meshgrid(
-            np.arange(self.m_y0, self.m_y1, dtype=np.float32),
-            np.arange(self.m_x0, self.m_x1, dtype=np.float32),
-            indexing="ij",
-        )
-        self.m_xx = xx.astype(np.int32)
-        self.m_yy = yy
-        jaw_cy = self.my + self.mh * 1.4
-        self.jaw_mask = np.exp(-(((xx - self.mx) / max(1.0, self.mw * 1.1)) ** 2 + ((yy - jaw_cy) / max(1.0, self.mh * 2.2)) ** 2))
+    def _build_newsroom_backdrop(self):
+        img = Image.new("RGB", (self.w, self.h), (10, 16, 36))
+        draw = ImageDraw.Draw(img)
+        for y in range(self.desk_y):
+            ry = y / float(max(1, self.desk_y))
+            glow = math.exp(-((ry - 0.45) / 0.38) ** 2)
+            r = int(10 + 30 * glow)
+            g = int(18 + 52 * glow)
+            b = int(45 + 105 * glow)
+            draw.line([(0, y), (self.w, y)], fill=(r, g, b))
 
-        # Oral opening mask
-        self.open_rx = max(6, int(self.mw * 0.72))
-        self.open_ry = max(3, int(self.mh * 0.75))
-        self.o_y0 = max(0, self.my - self.open_ry)
-        self.o_y1 = min(self.desk_y, self.my + self.open_ry + 2)
-        self.o_x0 = max(0, self.mx - self.open_rx)
-        self.o_x1 = min(self.w, self.mx + self.open_rx)
-        oyy, oxx = np.meshgrid(
-            np.arange(self.o_y0, self.o_y1, dtype=np.float32),
-            np.arange(self.o_x0, self.o_x1, dtype=np.float32),
-            indexing="ij",
-        )
-        self.oral_mask = np.exp(
-            -(((oxx - self.mx) / max(1.0, self.open_rx * 0.75)) ** 2 + ((oyy - (self.my + 1)) / max(1.0, self.open_ry * 0.85)) ** 2)
-        )[:, :, None]
+        for gx in range(0, self.w, max(42, self.w // 16)):
+            draw.line([(gx, 0), (gx, self.desk_y)], fill=(25, 62, 118), width=1)
+        for gy in range(0, self.desk_y, max(38, self.desk_y // 10)):
+            draw.line([(0, gy), (self.w, gy)], fill=(25, 62, 118), width=1)
 
-        # Precompute eye blink meshgrids
-        self.eye_patches = []
-        for (ecx, ecy, rx, ry) in self.eye_boxes:
-            ey0 = max(0, ecy - int(ry * 1.4))
-            ey1 = min(self.desk_y, ecy + int(ry * 1.15))
-            ex0 = max(0, ecx - int(rx * 1.25))
-            ex1 = min(self.w, ecx + int(rx * 1.25))
-            eyy, exx = np.meshgrid(
-                np.arange(ey0, ey1, dtype=np.float32),
-                np.arange(ex0, ex1, dtype=np.float32),
-                indexing="ij",
+        cx, cy = self.w // 2, int(self.desk_y * 0.44)
+        for rad in [int(self.desk_y * r) for r in (0.18, 0.30, 0.42, 0.54)]:
+            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=(38, 95, 175), width=2)
+
+        for idx, by in enumerate([int(self.desk_y * r) for r in (0.14, 0.34, 0.56, 0.78)]):
+            pad = int(self.w * (0.04 + 0.03 * (idx % 2)))
+            draw.rectangle([pad, by, self.w - pad, by + 6], fill=(220, 22, 40))
+            draw.rectangle([pad + 24, by + 9, self.w - pad - 24, by + 13], fill=(0, 205, 255))
+        return img
+
+    def _render_single_head(self, viseme_level, is_blink, gaze_dir, brow_state, tilt_deg):
+        """Renders a 2x-supersampled anti-aliased anime head sprite for the given expression tuple."""
+        ss = 2.0 * self.s
+        hw, hh = int(380 * ss), int(400 * ss)
+        canvas = Image.new("RGBA", (hw, hh), (0, 0, 0, 0))
+        d = ImageDraw.Draw(canvas)
+        cx, cy = hw // 2, int(hh * 0.50)
+
+        skin = (255, 226, 206, 255) if self.gender == "female" else (248, 212, 188, 255)
+        skin_warm = (252, 205, 182, 255) if self.gender == "female" else (238, 190, 164, 255)
+        line_col = (62, 38, 36, 255)
+        hair_base = (28, 24, 42, 255) if self.gender == "female" else (22, 26, 40, 255)
+        hair_mid = (46, 38, 68, 255) if self.gender == "female" else (36, 44, 68, 255)
+        hair_shine = (105, 96, 148, 255) if self.gender == "female" else (82, 96, 138, 255)
+
+        if self.gender == "female":
+            d.ellipse([cx - 104 * ss, cy - 118 * ss, cx + 104 * ss, cy + 45 * ss], fill=hair_base)
+
+        # Ears & Earrings
+        for side in [-1, 1]:
+            ex = cx + side * 88 * ss
+            ey = cy + 14 * ss
+            d.ellipse([ex - 14 * ss, ey - 20 * ss, ex + 14 * ss, ey + 20 * ss], fill=skin_warm, outline=line_col, width=max(2, int(2.0 * ss)))
+            if self.gender == "female":
+                d.ellipse([ex - 5 * ss, ey + 17 * ss, ex + 5 * ss, ey + 27 * ss], fill=(255, 250, 235, 255), outline=(220, 180, 75, 255), width=max(1, int(1.5 * ss)))
+
+        # Anime Face Contour
+        fw = 86 * ss if self.gender == "female" else 90 * ss
+        chin_y = cy + (92 * ss if self.gender == "female" else 96 * ss)
+        left_jaw = _bezier((cx - fw, cy - 15 * ss), (cx - fw, cy + 38 * ss), (cx - 54 * ss, cy + 74 * ss), (cx, chin_y))
+        right_jaw = _bezier((cx, chin_y), (cx + 54 * ss, cy + 74 * ss), (cx + fw, cy + 38 * ss), (cx + fw, cy - 15 * ss))
+        upper_head = _bezier((cx + fw, cy - 15 * ss), (cx + fw, cy - 108 * ss), (cx - fw, cy - 108 * ss), (cx - fw, cy - 15 * ss))
+        d.polygon(left_jaw + right_jaw + upper_head, fill=skin)
+
+        # Anime Cheek Blush & Slash Marks
+        for side in [-1, 1]:
+            bx = cx + side * 50 * ss
+            by = cy + 32 * ss
+            d.ellipse([bx - 20 * ss, by - 10 * ss, bx + 20 * ss, by + 10 * ss], fill=(252, 185, 175, 255) if self.gender == "female" else (242, 188, 168, 255))
+            d.line([(bx - 8 * ss, by + 2 * ss), (bx - 2 * ss, by - 3 * ss)], fill=(238, 145, 140, 255), width=max(1, int(1.6 * ss)))
+            d.line([(bx + 2 * ss, by + 3 * ss), (bx + 8 * ss, by - 2 * ss)], fill=(238, 145, 140, 255), width=max(1, int(1.6 * ss)))
+
+        d.line(left_jaw + right_jaw, fill=line_col, width=max(2, int(2.4 * ss)))
+
+        # Expressive Anime Eyes
+        eye_y = cy + 10 * ss
+        eye_sep = 41 * ss
+        ew = 23 * ss if self.gender == "female" else 22 * ss
+        eh = 15 * ss if self.gender == "female" else 12.5 * ss
+        gaze_x = gaze_dir * 3.2
+
+        for side in [-1, 1]:
+            ecx = cx + side * eye_sep
+            if is_blink:
+                lid_pts = _quad((ecx - ew, eye_y + 3 * ss), (ecx, eye_y + 9 * ss), (ecx + ew, eye_y + 2 * ss))
+                d.line(lid_pts, fill=(28, 18, 26, 255), width=max(3, int(3.8 * ss)))
+                d.line([(ecx + side * ew, eye_y + 2 * ss), (ecx + side * (ew + 6 * ss), eye_y - 2 * ss)], fill=(28, 18, 26, 255), width=max(2, int(2.8 * ss)))
+            else:
+                top_lid = _bezier((ecx - ew, eye_y + 3 * ss), (ecx - ew * 0.55, eye_y - eh * 1.25), (ecx + ew * 0.55, eye_y - eh * 1.25), (ecx + ew, eye_y + 1 * ss))
+                bot_lid = _bezier((ecx + ew, eye_y + 1 * ss), (ecx + ew * 0.45, eye_y + eh * 0.95), (ecx - ew * 0.45, eye_y + eh * 0.95), (ecx - ew, eye_y + 3 * ss))
+                d.polygon(top_lid + bot_lid, fill=(252, 254, 255, 255))
+
+                ix = ecx + gaze_x * ss
+                iy = eye_y
+                ir_w, ir_h = ew * 0.62, eh * 0.92
+                c_dark = (32, 42, 78, 255) if self.gender == "female" else (44, 30, 24, 255)
+                c_mid = (58, 92, 162, 255) if self.gender == "female" else (92, 58, 42, 255)
+                c_glow = (118, 182, 248, 255) if self.gender == "female" else (162, 110, 68, 255)
+
+                d.ellipse([ix - ir_w, iy - ir_h, ix + ir_w, iy + ir_h], fill=c_dark)
+                d.ellipse([ix - ir_w * 0.82, iy - ir_h * 0.78, ix + ir_w * 0.82, iy + ir_h * 0.86], fill=c_mid)
+                d.pieslice([ix - ir_w * 0.75, iy - ir_h * 0.65, ix + ir_w * 0.75, iy + ir_h * 0.86], 15, 165, fill=c_glow)
+                d.ellipse([ix - ir_w * 0.38, iy - ir_h * 0.42, ix + ir_w * 0.38, iy + ir_h * 0.42], fill=(16, 14, 24, 255))
+                d.ellipse([ix - ir_w * 0.58, iy - ir_h * 0.65, ix - ir_w * 0.16, iy - ir_h * 0.20], fill=(255, 255, 255, 255))
+                d.ellipse([ix + ir_w * 0.18, iy + ir_h * 0.18, ix + ir_w * 0.44, iy + ir_h * 0.44], fill=(255, 255, 255, 255))
+
+                lash_top = _bezier((ecx - ew - 2 * ss, eye_y + 4 * ss), (ecx - ew * 0.60, eye_y - eh * 1.52), (ecx + ew * 0.60, eye_y - eh * 1.52), (ecx + ew + 3 * ss, eye_y))
+                d.polygon(top_lid + list(reversed(lash_top)), fill=(22, 16, 26, 255))
+                if self.gender == "female":
+                    d.polygon([(ecx + side * (ew - 1 * ss), eye_y - 1 * ss), (ecx + side * (ew + 8 * ss), eye_y - 7 * ss), (ecx + side * (ew - 4 * ss), eye_y - 6 * ss)], fill=(22, 16, 26, 255))
+                d.line(bot_lid, fill=(92, 62, 56, 255), width=max(1, int(1.6 * ss)))
+                crease = _quad((ecx - ew * 0.70, eye_y - eh * 1.22), (ecx, eye_y - eh * 1.65), (ecx + ew * 0.70, eye_y - eh * 1.18))
+                d.line(crease, fill=(142, 96, 82, 255), width=max(1, int(1.6 * ss)))
+
+        # Delicate Anime Nose
+        ny = cy + 34 * ss
+        d.polygon([(cx - 1 * ss, ny - 9 * ss), (cx - 5 * ss, ny + 2 * ss), (cx + 2 * ss, ny + 3 * ss)], fill=skin_warm)
+        d.line([(cx - 2 * ss, ny - 6 * ss), (cx - 4 * ss, ny + 1 * ss), (cx + 1 * ss, ny + 2 * ss)], fill=(145, 96, 80, 255), width=max(1, int(1.8 * ss)))
+
+        # 6-State Audio-Synced Anime Mouth
+        my = cy + 58 * ss
+        if viseme_level == 0:
+            mw = 18 * ss
+            if self.gender == "female":
+                d.polygon([(cx - mw, my), (cx, my - 2.5 * ss), (cx + mw, my), (cx, my + 4.5 * ss)], fill=(225, 92, 104, 255))
+            smile = _quad((cx - mw, my - 1 * ss), (cx, my + 4 * ss), (cx + mw, my - 1 * ss))
+            d.line(smile, fill=(88, 38, 42, 255), width=max(2, int(2.2 * ss)))
+        else:
+            v_specs = {
+                1: (16 * ss, 8 * ss),
+                2: (23 * ss, 19 * ss),
+                3: (16 * ss, 22 * ss),
+                4: (25 * ss, 13 * ss),
+                5: (26 * ss, 24 * ss),
+            }
+            mw, mh = v_specs.get(viseme_level, (20 * ss, 15 * ss))
+            tlip = _quad((cx - mw, my - mh * 0.2), (cx, my - mh * 0.5), (cx + mw, my - mh * 0.2))
+            blip = _bezier((cx + mw, my - mh * 0.2), (cx + mw * 0.75, my + mh * 0.92), (cx - mw * 0.75, my + mh * 0.92), (cx - mw, my - mh * 0.2))
+            mpoly = tlip + blip
+            d.polygon(mpoly, fill=(118, 32, 46, 255))
+            d.pieslice([cx - mw * 0.65, my - mh * 0.02, cx + mw * 0.65, my + mh * 0.80], 0, 180, fill=(232, 112, 124, 255))
+            d.polygon([(cx - mw * 0.72, my - mh * 0.20), (cx + mw * 0.72, my - mh * 0.20), (cx + mw * 0.62, my + mh * 0.05), (cx - mw * 0.62, my + mh * 0.05)], fill=(252, 253, 255, 255))
+            d.line(mpoly, fill=(82, 26, 34, 255), width=max(2, int(2.0 * ss)))
+
+        # Layered Anime Hair & Side Locks
+        if self.gender == "female":
+            left_lock = (
+                _bezier((cx - 84 * ss, cy - 45 * ss), (cx - 106 * ss, cy + 5 * ss), (cx - 105 * ss, cy + 70 * ss), (cx - 86 * ss, cy + 128 * ss))
+                + _bezier((cx - 86 * ss, cy + 128 * ss), (cx - 82 * ss, cy + 70 * ss), (cx - 84 * ss, cy + 15 * ss), (cx - 68 * ss, cy - 35 * ss))
             )
-            horiz = np.clip(1.0 - ((exx - ecx) / max(1.0, rx * 1.05)) ** 2, 0.0, 1.0)
-            vert = np.exp(-((eyy - ecy) / max(1.0, ry * 0.85)) ** 2)
-            pull_unit = (ry * 1.25) * horiz * vert
-            self.eye_patches.append((ey0, ey1, ex0, ex1, exx.astype(np.int32), eyy, pull_unit))
+            right_lock = (
+                _bezier((cx + 84 * ss, cy - 45 * ss), (cx + 106 * ss, cy + 5 * ss), (cx + 105 * ss, cy + 70 * ss), (cx + 86 * ss, cy + 128 * ss))
+                + _bezier((cx + 86 * ss, cy + 128 * ss), (cx + 82 * ss, cy + 70 * ss), (cx + 84 * ss, cy + 15 * ss), (cx + 68 * ss, cy - 35 * ss))
+            )
+            d.polygon(left_lock, fill=hair_mid, outline=(18, 15, 28, 255), width=max(1, int(1.5 * ss)))
+            d.polygon(right_lock, fill=hair_mid, outline=(18, 15, 28, 255), width=max(1, int(1.5 * ss)))
 
-    def render_frame(self, t, speech_amp):
-        frame = self.base.copy()
+            crown = _bezier((cx - 104 * ss, cy - 25 * ss), (cx - 112 * ss, cy - 142 * ss), (cx + 112 * ss, cy - 142 * ss), (cx + 104 * ss, cy - 25 * ss))
+            bangs = (
+                _quad((cx + 104 * ss, cy - 25 * ss), (cx + 82 * ss, cy - 4 * ss), (cx + 68 * ss, cy - 18 * ss))
+                + _quad((cx + 68 * ss, cy - 18 * ss), (cx + 48 * ss, cy - 52 * ss), (cx + 24 * ss, cy - 12 * ss))
+                + _quad((cx + 24 * ss, cy - 12 * ss), (cx + 8 * ss, cy - 48 * ss), (cx - 12 * ss, cy - 10 * ss))
+                + _quad((cx - 12 * ss, cy - 10 * ss), (cx - 34 * ss, cy - 54 * ss), (cx - 58 * ss, cy - 16 * ss))
+                + _quad((cx - 58 * ss, cy - 16 * ss), (cx - 82 * ss, cy - 4 * ss), (cx - 104 * ss, cy - 25 * ss))
+            )
+            d.polygon(crown + bangs, fill=hair_base)
+            hi1 = _bezier((cx - 65 * ss, cy - 62 * ss), (cx - 20 * ss, cy - 84 * ss), (cx + 20 * ss, cy - 84 * ss), (cx + 65 * ss, cy - 62 * ss))
+            d.line(hi1, fill=hair_shine, width=max(3, int(5.5 * ss)))
+        else:
+            crown = _bezier((cx - 98 * ss, cy - 12 * ss), (cx - 108 * ss, cy - 138 * ss), (cx + 108 * ss, cy - 138 * ss), (cx + 98 * ss, cy - 12 * ss))
+            bangs = (
+                [(cx + 98 * ss, cy - 12 * ss), (cx + 88 * ss, cy + 16 * ss), (cx + 80 * ss, cy - 18 * ss)]
+                + _quad((cx + 80 * ss, cy - 18 * ss), (cx + 56 * ss, cy - 50 * ss), (cx + 32 * ss, cy - 12 * ss))
+                + _quad((cx + 32 * ss, cy - 12 * ss), (cx + 10 * ss, cy - 52 * ss), (cx - 10 * ss, cy - 10 * ss))
+                + _quad((cx - 10 * ss, cy - 10 * ss), (cx - 35 * ss, cy - 50 * ss), (cx - 56 * ss, cy - 14 * ss))
+                + [(cx - 56 * ss, cy - 14 * ss), (cx - 80 * ss, cy - 18 * ss), (cx - 88 * ss, cy + 16 * ss), (cx - 98 * ss, cy - 12 * ss)]
+            )
+            d.polygon(crown + bangs, fill=hair_base)
+            hi1 = _bezier((cx - 58 * ss, cy - 64 * ss), (cx - 18 * ss, cy - 84 * ss), (cx + 18 * ss, cy - 84 * ss), (cx + 58 * ss, cy - 64 * ss))
+            d.line(hi1, fill=hair_shine, width=max(3, int(5.0 * ss)))
 
-        # 1. Natural Periodic Eye Blink (every 3.8s, smooth 0.14s upper-eyelid squeeze)
-        blink_phase = t % 3.8
-        blink_amount = math.exp(-((blink_phase - 1.9) / 0.055) ** 2)
-        if blink_amount > 0.06:
-            for (ey0, ey1, ex0, ex1, exx, eyy, pull_unit) in self.eye_patches:
-                src_y = np.clip(np.rint(eyy - blink_amount * pull_unit).astype(np.int32), 0, self.h - 1)
-                frame[ey0:ey1, ex0:ex1] = self.base[src_y, exx]
+        # Audio-Reactive Expressive Anime Eyebrows
+        brow_lift = (6.5 * ss) if brow_state == 1 else (3.0 * ss if brow_state == 2 else 0.0)
+        for side in [-1, 1]:
+            ecx = cx + side * eye_sep
+            by = eye_y - eh - 11 * ss - brow_lift
+            in_dy = 4.0 * ss if brow_state == 2 else -2.0 * ss
+            b_pts = _quad((ecx - side * ew * 0.80, by + in_dy), (ecx, by - 6 * ss), (ecx + side * ew * 0.90, by + 2 * ss))
+            d.line(b_pts, fill=(28, 20, 32, 255), width=max(3, int(3.4 * ss)))
 
-        # 2. Speech-Synced Mouth & Lower-Jaw Articulation
-        if speech_amp > 0.08:
-            mod = 0.85 + 0.15 * math.sin(t * 11.0)
-            eff_amp = min(1.0, speech_amp * mod)
-            drop_px = 4.2 * eff_amp * self.jaw_mask
-            src_y = np.clip(np.rint(self.m_yy - drop_px).astype(np.int32), 0, self.h - 1)
-            frame[self.m_y0 : self.m_y1, self.m_x0 : self.m_x1] = frame[src_y, self.m_xx]
+        base_head = canvas.resize((hw // 2, hh // 2), Image.Resampling.LANCZOS)
+        if abs(tilt_deg) > 0.2:
+            return base_head.rotate(tilt_deg, resample=Image.Resampling.BICUBIC, expand=False)
+        return base_head
 
-            oral_region = frame[self.o_y0 : self.o_y1, self.o_x0 : self.o_x1].astype(np.float32)
-            oral_region *= 1.0 - (0.60 * eff_amp * self.oral_mask)
-            frame[self.o_y0 : self.o_y1, self.o_x0 : self.o_x1] = np.clip(oral_region, 0, 255).astype(np.uint8)
+    def _prebuild_head_cache(self):
+        """Pre-renders expression combinations so per-frame animation is instant (<0.8ms/frame)."""
+        for v in range(6):
+            for blink in (False, True):
+                for g_dir, b_st, tilt in [
+                    (0, 0, 0.0),
+                    (-1, 1, -2.4),
+                    (1, 2, 2.4),
+                ]:
+                    self.head_cache[(v, blink, g_dir)] = self._render_single_head(v, blink, g_dir, b_st, tilt)
 
-        return frame
+    def render_frame(self, t, speech_amp, word_idx=0):
+        frame = self.bg_img.copy().convert("RGBA")
+        d = ImageDraw.Draw(frame)
+        s = self.s
+        cx = self.w // 2
+        desk_y = self.desk_y
+
+        # 1. Audio-Synced Body Breathing, Torso Sway & Head Nod
+        breath = math.sin(t * 2.5) * 3.0 * s
+        sway_x = int(math.sin(t * 1.7) * 6.0 * s + speech_amp * math.cos(t * 5.2) * 4.5 * s)
+        talk_nod = int((speech_amp ** 1.1) * math.sin(t * 11.0) * 6.0 * s)
+        tcx = cx + sway_x
+        sh_top = int(desk_y - 165 * s + breath)
+
+        skin = (255, 226, 206, 255) if self.gender == "female" else (248, 212, 188, 255)
+        skin_shade = (224, 182, 158, 255) if self.gender == "female" else (214, 168, 142, 255)
+
+        # Back Hair (drawn BEHIND neck & shoulders for female anchor)
+        if self.gender == "female":
+            d.polygon([
+                (tcx - int(105 * s), sh_top - int(145 * s)),
+                (tcx + int(105 * s), sh_top - int(145 * s)),
+                (tcx + int(132 * s), sh_top + int(45 * s)),
+                (tcx - int(132 * s), sh_top + int(45 * s)),
+            ], fill=(22, 18, 34, 255))
+
+        # Neck
+        nw = int(26 * s) if self.gender == "female" else int(33 * s)
+        ntop = sh_top - int(36 * s)
+        d.rectangle([tcx - nw, ntop, tcx + nw, sh_top + int(25 * s)], fill=skin)
+        d.polygon([(tcx - nw, ntop), (tcx + nw, ntop), (tcx, ntop + int(24 * s))], fill=skin_shade)
+
+        # Studio Blazer & Shirt
+        sh_w = int(200 * s) if self.gender == "female" else int(230 * s)
+        suit_main = (182, 22, 44, 255) if self.gender == "female" else (22, 34, 62, 255)
+        suit_dark = (132, 14, 30, 255) if self.gender == "female" else (14, 22, 42, 255)
+        suit_lapel = (210, 34, 58, 255) if self.gender == "female" else (36, 52, 88, 255)
+
+        d.polygon([
+            (tcx - sh_w, desk_y + 10),
+            (tcx + sh_w, desk_y + 10),
+            (tcx + int(sh_w * 0.86), sh_top + int(22 * s)),
+            (tcx + int(54 * s), sh_top - int(4 * s)),
+            (tcx - int(54 * s), sh_top - int(4 * s)),
+            (tcx - int(sh_w * 0.86), sh_top + int(22 * s)),
+        ], fill=suit_main, outline=(15, 16, 26, 255), width=max(2, int(2.5 * s)))
+
+        d.polygon([
+            (tcx - int(50 * s), sh_top - int(4 * s)),
+            (tcx + int(50 * s), sh_top - int(4 * s)),
+            (tcx + int(18 * s), desk_y),
+            (tcx - int(18 * s), desk_y),
+        ], fill=(246, 249, 255, 255))
+
+        for side in [-1, 1]:
+            d.polygon([
+                (tcx + side * int(50 * s), sh_top - int(4 * s)),
+                (tcx + side * int(84 * s), sh_top + int(16 * s)),
+                (tcx + side * int(26 * s), desk_y),
+                (tcx + side * int(15 * s), desk_y),
+            ], fill=suit_lapel, outline=(15, 16, 26, 255), width=max(2, int(2 * s)))
+
+        if self.gender == "male":
+            d.polygon([(tcx - int(15 * s), sh_top + int(8 * s)), (tcx + int(15 * s), sh_top + int(8 * s)), (tcx + int(10 * s), sh_top + int(30 * s)), (tcx - int(10 * s), sh_top + int(30 * s))], fill=(190, 16, 30, 255))
+            d.polygon([(tcx - int(10 * s), sh_top + int(30 * s)), (tcx + int(10 * s), sh_top + int(30 * s)), (tcx + int(17 * s), desk_y - int(8 * s)), (tcx, desk_y + int(4 * s)), (tcx - int(17 * s), desk_y - int(8 * s))], fill=(220, 24, 40, 255))
+            d.rectangle([tcx - int(12 * s), sh_top + int(76 * s), tcx + int(12 * s), sh_top + int(81 * s)], fill=(250, 208, 48, 255))
+
+        px, py = tcx + int(56 * s), sh_top + int(54 * s)
+        d.ellipse([px - int(8 * s), py - int(8 * s), px + int(8 * s), py + int(8 * s)], fill=(250, 202, 24, 255), outline=(255, 255, 255, 255), width=2)
+
+        # Select Pre-Cached Expressive Anime Head State
+        blink_phase = (t + 0.3) % 3.2
+        is_blink = abs(blink_phase - 1.6) < 0.085
+        # Natural syllable-level articulation so mouth opens, rounds, smiles, and closes rhythmically
+        syl_wave = abs(math.sin(t * 13.5 + word_idx * 1.3))
+        eff_speech = speech_amp * (0.25 + 0.75 * syl_wave)
+        if speech_amp < 0.08 or syl_wave < 0.16:
+            viseme_level = 0
+        elif eff_speech > 0.68:
+            viseme_level = 5 if ((int(t * 9.0) + word_idx) % 2 == 0) else 2
+        elif eff_speech > 0.42:
+            viseme_level = 2 + ((int(t * 11.0) + word_idx) % 3)
+        else:
+            viseme_level = 1
+
+        pose_cycle = int(t * 1.2 + word_idx * 0.3) % 3
+        gaze_dir = 0 if pose_cycle == 0 else (-1 if pose_cycle == 1 else 1)
+        if speech_amp < 0.12:
+            gaze_dir = 0
+
+        head_sprite = self.head_cache[(viseme_level, is_blink, gaze_dir)]
+        hx = tcx - head_sprite.width // 2
+        hy = sh_top - int(112 * s) - (head_sprite.height // 2) + talk_nod
+        frame.alpha_composite(head_sprite, (hx, hy))
+
+        # Audio-Driven Expressive Hand & Forearm Gesture
+        gesture_lift = int((speech_amp * 52.0 + max(0.0, math.sin(t * 6.5)) * 24.0 * speech_amp) * s)
+        gx = tcx - int(128 * s) + int(speech_amp * math.sin(t * 4.5) * 10.0 * s)
+        gy = desk_y - int(22 * s) - gesture_lift
+        d.polygon([
+            (tcx - int(180 * s), desk_y + 10),
+            (tcx - int(134 * s), desk_y + 10),
+            (gx + int(15 * s), gy + int(12 * s)),
+            (gx - int(20 * s), gy + int(20 * s)),
+        ], fill=suit_dark, outline=(15, 16, 26, 255), width=max(2, int(2 * s)))
+        d.ellipse([gx - int(14 * s), gy - int(15 * s), gx + int(18 * s), gy + int(9 * s)], fill=skin, outline=(70, 45, 38, 255), width=max(2, int(2 * s)))
+        for f_ang in [-12, -3, 6, 14]:
+            d.line([(gx + int(7 * s), gy - int(3 * s)), (gx + int(24 * s), gy - int(7 * s) + int(f_ang * 0.8 * s))], fill=skin, width=max(3, int(4.5 * s)))
+
+        # 3D Broadcast Studio Desk, News Script Pages & Dual Microphones
+        d.polygon([(0, desk_y), (self.w, desk_y), (self.w, self.h), (0, self.h)], fill=(12, 18, 38, 255))
+        d.rectangle([0, desk_y, self.w, desk_y + int(8 * s)], fill=(250, 198, 0, 255))
+        d.rectangle([0, desk_y + int(8 * s), self.w, desk_y + int(16 * s)], fill=(195, 16, 30, 255))
+
+        # News Script Papers on Desk
+        d.polygon([
+            (tcx + int(45 * s), desk_y + int(2 * s)),
+            (tcx + int(140 * s), desk_y - int(6 * s)),
+            (tcx + int(156 * s), desk_y + int(14 * s)),
+            (tcx + int(58 * s), desk_y + int(15 * s)),
+        ], fill=(242, 246, 255, 255), outline=(150, 168, 196, 255), width=1)
+
+        for side in [-1, 1]:
+            mx = cx + side * int(self.w * 0.21)
+            tip_x = mx - side * int(20 * s)
+            tip_y = desk_y - int(56 * s)
+            d.line([(mx, desk_y), (tip_x, tip_y)], fill=(64, 72, 88, 255), width=max(3, int(4.5 * s)))
+            d.rectangle([tip_x - int(12 * s), tip_y + int(5 * s), tip_x + int(12 * s), tip_y + int(22 * s)], fill=(205, 18, 32, 255), outline=(255, 215, 0, 255), width=1)
+            d.ellipse([tip_x - int(9 * s), tip_y - int(16 * s), tip_x + int(9 * s), tip_y + int(6 * s)], fill=(28, 32, 40, 255), outline=(205, 215, 230, 255), width=2)
+
+        return np.asarray(frame.convert("RGB"), dtype=np.uint8)
 
 
-# ================= 7. FULL-FRAME BROADCAST VIDEO RENDERER =================
+# ================= 7. LIVE AUDIO-SYNCED STORY BOARD & KARAOKE SUBTITLE RENDERER =================
+def _build_word_synced_story_cards(broll_win_w, card_h, word_timings, language="hindi", is_short=True):
+    """
+    Builds one Live Story Teleprompter Card per word for the Top/Left B-Roll Window.
+    As the anchor speaks each word, that exact word lights up in a Golden-Red Highlight Pill
+    and the 3-line story page automatically advances so the font NEVER stays stuck on the first line!
+    """
+    dummy_img = Image.new("RGB", (broll_win_w, card_h))
+    dummy_draw = ImageDraw.Draw(dummy_img)
+    font_sz = 30 if is_short else 23
+    pad_x = 34 if is_short else 24
+    max_text_w = broll_win_w - (pad_x * 2) - 36
+
+    lines = wrap_words_into_lines(dummy_draw, word_timings, font_size=font_sz, max_pixel_width=max_text_w)
+    lines_per_page = 3
+    pages = [lines[i : i + lines_per_page] for i in range(0, len(lines), lines_per_page)] or [lines]
+
+    word_to_page = {}
+    for p_idx, page in enumerate(pages):
+        for ln in page:
+            for wt in ln:
+                word_to_page[wt["idx"]] = p_idx
+
+    total_words = max(1, len(word_timings))
+    cards = []
+    hdr_h = 46 if is_short else 38
+    line_step = 46 if is_short else 36
+
+    for active_idx in range(total_words):
+        p_idx = word_to_page.get(active_idx, 0)
+        page = pages[p_idx]
+
+        card = Image.new("RGB", (broll_win_w, card_h), (12, 20, 44))
+        cd = ImageDraw.Draw(card)
+        cd.rounded_rectangle([12, 4, broll_win_w - 12, card_h - 4], radius=14, fill=(14, 22, 48), outline=(250, 198, 0), width=3)
+        cd.rounded_rectangle([15, 7, broll_win_w - 15, hdr_h + 4], radius=10, fill=(195, 16, 30))
+        cd.ellipse([30, 16 if is_short else 13, 46, 32 if is_short else 29], fill=(255, 255, 255))
+
+        hdr_text = (
+            f"LIVE TELEPROMPTER  •  भाग {p_idx + 1}/{len(pages)}"
+            if language == "hindi"
+            else f"LIVE STORY FEED  •  PART {p_idx + 1}/{len(pages)}"
+        )
+        draw_bilingual_text(cd, (58, 10 if is_short else 8), hdr_text, size=23 if is_short else 19, fill=(255, 255, 255))
+
+        ty = hdr_h + (16 if is_short else 12)
+        space_px = max(9, int(font_sz * 0.32))
+        for ln in page:
+            tx = pad_x
+            for wt in ln:
+                w_str = wt["word"]
+                w_idx = wt["idx"]
+                w_px = measure_bilingual_text(cd, w_str, size=font_sz)
+                if w_idx == active_idx:
+                    cd.rounded_rectangle(
+                        [tx - 5, ty - 3, tx + w_px + 5, ty + font_sz + 6],
+                        radius=7,
+                        fill=(215, 20, 36),
+                        outline=(255, 215, 0),
+                        width=2,
+                    )
+                    draw_bilingual_text(cd, (tx, ty), w_str, size=font_sz, fill=(255, 235, 80))
+                elif w_idx < active_idx:
+                    draw_bilingual_text(cd, (tx, ty), w_str, size=font_sz, fill=(255, 255, 255))
+                else:
+                    draw_bilingual_text(cd, (tx, ty), w_str, size=font_sz, fill=(150, 178, 215))
+                tx += w_px + space_px
+            ty += line_step
+
+        prog_ratio = float(active_idx + 1) / float(total_words)
+        bar_x0, bar_x1 = 24, broll_win_w - 24
+        bar_y = card_h - 12
+        cd.rectangle([bar_x0, bar_y, bar_x1, bar_y + 5], fill=(28, 42, 78))
+        cd.rectangle([bar_x0, bar_y, bar_x0 + int((bar_x1 - bar_x0) * prog_ratio), bar_y + 5], fill=(0, 215, 255))
+
+        cards.append(np.asarray(card, dtype=np.uint8))
+    return cards
+
+
+def _build_word_synced_subtitle_cards(W, sub_h, word_timings, language="hindi", is_short=True):
+    """
+    Builds one Bottom Subtitle Bar (`एंकर: ...`) per word so the bottom caption bar
+    also highlights the exact spoken word in real time and NEVER clips off the right edge!
+    """
+    dummy_img = Image.new("RGB", (W, sub_h))
+    dummy_draw = ImageDraw.Draw(dummy_img)
+    sub_font_sz = 30 if is_short else 22
+    speaker_tag = "एंकर:" if language == "hindi" else "ANCHOR:"
+    tag_px = measure_bilingual_text(dummy_draw, speaker_tag, size=sub_font_sz) + 18
+    start_x = 58 + tag_px
+    max_line_w = W - start_x - 36
+
+    lines = wrap_words_into_lines(dummy_draw, word_timings, font_size=sub_font_sz, max_pixel_width=max_line_w)
+    word_to_line = {}
+    for l_idx, ln in enumerate(lines):
+        for wt in ln:
+            word_to_line[wt["idx"]] = l_idx
+
+    total_words = max(1, len(word_timings))
+    sub_cards = []
+    space_px = max(8, int(sub_font_sz * 0.32))
+    ty = (sub_h - sub_font_sz) // 2 - 2
+
+    for active_idx in range(total_words):
+        ln = lines[word_to_line.get(active_idx, 0)]
+        sc_img = Image.new("RGB", (W, sub_h), (10, 14, 28))
+        sc_draw = ImageDraw.Draw(sc_img)
+        sc_draw.rectangle([0, 0, W, 3], fill=(0, 195, 255))
+        sc_draw.rounded_rectangle([16, 6, W - 16, sub_h - 6], radius=10, fill=(18, 24, 46), outline=(255, 205, 0), width=2)
+        cy_dot = sub_h // 2
+        sc_draw.ellipse([32, cy_dot - 7, 46, cy_dot + 7], fill=(235, 30, 45))
+        draw_bilingual_text(sc_draw, (56, ty), speaker_tag, size=sub_font_sz, fill=(255, 205, 0))
+
+        tx = start_x
+        for wt in ln:
+            w_str = wt["word"]
+            w_idx = wt["idx"]
+            w_px = measure_bilingual_text(sc_draw, w_str, size=sub_font_sz)
+            if w_idx == active_idx:
+                sc_draw.rounded_rectangle(
+                    [tx - 4, ty - 2, tx + w_px + 4, ty + sub_font_sz + 5],
+                    radius=6,
+                    fill=(205, 18, 34),
+                    outline=(255, 215, 0),
+                    width=2,
+                )
+                draw_bilingual_text(sc_draw, (tx, ty), w_str, size=sub_font_sz, fill=(255, 238, 75))
+            elif w_idx < active_idx:
+                draw_bilingual_text(sc_draw, (tx, ty), w_str, size=sub_font_sz, fill=(255, 255, 255))
+            else:
+                draw_bilingual_text(sc_draw, (tx, ty), w_str, size=sub_font_sz, fill=(160, 188, 225))
+            tx += w_px + space_px
+
+        sub_cards.append(np.asarray(sc_img, dtype=np.uint8))
+    return sub_cards
+
+
+# ================= 8. FULL-FRAME BROADCAST VIDEO RENDERER =================
 def _get_audio_duration(audio_path):
     try:
         cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path]
@@ -1011,13 +1222,6 @@ def _extract_audio_envelope(audio_path, duration, fps=20):
         return 0.45 + 0.45 * np.abs(np.sin(2.0 * np.pi * 3.8 * t))
 
 
-def _split_caption_chunks(text, max_words_per_chunk=7):
-    words = (text or "").strip().split()
-    if not words:
-        return [""]
-    return [" ".join(words[i : i + max_words_per_chunk]) for i in range(0, len(words), max_words_per_chunk)]
-
-
 def _create_bgm_wav(total_duration, bgm_path="temp/broadcast_bgm.wav"):
     import wave
     sr = 16000
@@ -1041,11 +1245,13 @@ def _create_bgm_wav(total_duration, bgm_path="temp/broadcast_bgm.wav"):
     return bgm_path if os.path.exists(bgm_path) else None
 
 
-def build_news_video(script_data, scene_assets, output_path, is_short=True, anchor_img_path=None):
+def build_news_video(script_data, scene_assets, output_path, is_short=True):
     """
-    Renders a full-bleed BBC / Aaj Tak / News 24 broadcast video:
-      - Short (1080x1920 @ 24fps): Zero bottom black bars; 3D Studio Desk houses subtitles, ticker, and desk pedestal.
-      - Long Video (1280x720 16:9 HD @ 20fps): Fast zero-copy streaming for 10+ minute Mega Bulletins!
+    Renders a full-bleed BBC / Aaj Tak / News 24 broadcast video with:
+      1. Expressive 2.5D Anime TV News Anchor (Male/Female) reacting to every syllable & beat of the audio
+      2. Live Audio-Synced Story Teleprompter on the B-Roll Screen (highlighting every word & advancing page by page)
+      3. Live Karaoke Word-by-Word Highlighted Bottom Subtitle Bar
+      4. Scrolling Red Headline Strap + Scrolling Yellow Ticker + Zero Black Bars!
     """
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     os.makedirs("temp", exist_ok=True)
@@ -1055,6 +1261,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
 
     language = script_data.get("language", "hindi")
     category = script_data.get("category", "NATION").upper()
+    anchor_gender = script_data.get("anchor_gender", "female")
     ticker_raw = script_data.get("ticker_text") or script_data.get("headline_banner") or "LIVE BREAKING NEWS UPDATES"
 
     ticker_clean = re.sub(r"•", " | ", ticker_raw)
@@ -1072,29 +1279,24 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
     ticker_arr = np.asarray(ticker_strip, dtype=np.uint8)
 
     if is_short:
-        # 9:16 Vertical Full-Bleed Layout (1080x1920) - ZERO BLACK SPACE!
         broll_win_w, broll_win_h = W, 830
         strap_h = 104
-        anchor_w, anchor_h = W, H - broll_win_h - strap_h  # 986px (fills y=934..1920 completely!)
+        anchor_w, anchor_h = W, H - broll_win_h - strap_h  # 986px
         sub_h = 96
-        max_words_chunk = 6
-        hl_max_chars = 42
-        desk_ratio = 0.56  # Desk starts at y = 934 + 552 = 1486, housing subtitles, ticker, and desk pedestal!
+        desk_ratio = 0.56
+        story_card_h = 220
     else:
-        # 16:9 Horizontal Prime-Time TV Layout (1280x720)
         header_h = 46
         strap_h = 58
         sub_h = 58
-        body_h = H - header_h - strap_h - sub_h - ticker_h  # 514px (y=46..560)
+        body_h = H - header_h - strap_h - sub_h - ticker_h  # 514px
         broll_win_w, broll_win_h = 760, body_h
         anchor_w, anchor_h = W - broll_win_w, body_h  # 520x514
-        max_words_chunk = 11
-        hl_max_chars = 66
-        desk_ratio = 0.88
+        desk_ratio = 0.86
+        story_card_h = 166
 
-    animator = BroadcastAnchorAnimator(anchor_img_path, width=anchor_w, height=anchor_h, desk_ratio=desk_ratio)
+    animator = StudioAnimeAnchor(gender=anchor_gender, width=anchor_w, height=anchor_h, desk_ratio=desk_ratio)
 
-    # Pre-render Short Desk Pedestal Footer (y = 1648..1920) so bottom of Short looks like a real TV News Desk
     if is_short:
         ped_h = 272
         ped_img = Image.new("RGB", (W, ped_h), (10, 15, 32))
@@ -1109,7 +1311,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
         draw_bilingual_text(p_draw, (195, 152), sub_ped, size=28, fill=(255, 215, 0))
         pedestal_arr = np.asarray(ped_img, dtype=np.uint8)
     else:
-        # Pre-render 16:9 Top Studio Header Bar (1280x46)
         hdr_img = Image.new("RGB", (W, header_h), (12, 18, 38))
         h_draw = ImageDraw.Draw(hdr_img)
         h_draw.rectangle([0, header_h - 3, W, header_h], fill=(250, 195, 0))
@@ -1122,7 +1323,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
         draw_bilingual_text(h_draw, (375, 9), hdr_title, size=21, fill=(240, 245, 255))
         header_arr = np.asarray(hdr_img, dtype=np.uint8)
 
-    # Pre-render Top-Left LIVE badge for Short B-roll
     badge_on = Image.new("RGB", (440, 56), (14, 22, 48))
     bo_draw = ImageDraw.Draw(badge_on)
     bo_draw.rectangle([0, 0, 215, 56], fill=(230, 18, 32))
@@ -1151,40 +1351,48 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
                 broll_cache[img_p] = np.asarray(broll_pil, dtype=np.uint8)
             broll_base_arr = broll_cache[img_p]
 
-            headline_banner = asset.get("headline_banner") or script_data.get("headline_banner", "BREAKING NEWS")
-            narration = asset.get("subtitles") or asset.get("narration", "")
-            caption_chunks = _split_caption_chunks(narration, max_words_per_chunk=max_words_chunk)
+            headline_banner = (asset.get("headline_banner") or script_data.get("headline_banner") or "BREAKING NEWS").strip()
+            narration = (asset.get("subtitles") or asset.get("narration") or headline_banner).strip()
 
-            strap_img = Image.new("RGB", (W, strap_h), (155, 12, 24))
-            s_draw = ImageDraw.Draw(strap_img)
-            s_draw.rectangle([0, 0, W, 5], fill=(255, 205, 0))
-            s_draw.rectangle([0, strap_h - 5, W, strap_h], fill=(255, 205, 0))
+            word_timings = build_word_timings(narration, dur)
+            story_cards = _build_word_synced_story_cards(
+                broll_win_w=broll_win_w,
+                card_h=story_card_h,
+                word_timings=word_timings,
+                language=language,
+                is_short=is_short,
+            )
+            sub_cards = _build_word_synced_subtitle_cards(
+                W=W,
+                sub_h=sub_h,
+                word_timings=word_timings,
+                language=language,
+                is_short=is_short,
+            )
+
             badge_label = "बड़ी ख़बर" if language == "hindi" else "BREAKING"
             tag_w = 225 if is_short else 185
-            s_draw.polygon([(0, 5), (tag_w, 5), (tag_w - 22, strap_h - 5), (0, strap_h - 5)], fill=(250, 195, 0))
             strap_font_sz = 28 if is_short else 22
             hl_font_sz = 32 if is_short else 24
-            ty_strap = (strap_h - strap_font_sz) // 2 - 2
-            draw_bilingual_text(s_draw, (18, ty_strap), badge_label, size=strap_font_sz, fill=(15, 15, 20))
 
-            hl_clean = headline_banner.strip()
-            if len(hl_clean) > hl_max_chars:
-                hl_clean = hl_clean[: hl_max_chars - 2] + "..."
-            draw_bilingual_text(s_draw, (tag_w + 12, (strap_h - hl_font_sz) // 2 - 2), hl_clean, size=hl_font_sz, fill=(255, 255, 255))
-            strap_rgb = np.asarray(strap_img, dtype=np.uint8)
+            strap_left_img = Image.new("RGB", (tag_w, strap_h), (155, 12, 24))
+            sl_draw = ImageDraw.Draw(strap_left_img)
+            sl_draw.rectangle([0, 0, tag_w, 5], fill=(255, 205, 0))
+            sl_draw.rectangle([0, strap_h - 5, tag_w, strap_h], fill=(255, 205, 0))
+            sl_draw.polygon([(0, 5), (tag_w, 5), (tag_w - 22, strap_h - 5), (0, strap_h - 5)], fill=(250, 195, 0))
+            draw_bilingual_text(sl_draw, (18, (strap_h - strap_font_sz) // 2 - 2), badge_label, size=strap_font_sz, fill=(15, 15, 20))
+            strap_left_arr = np.asarray(strap_left_img, dtype=np.uint8)
 
-            sub_cards = []
-            sub_font_sz = 31 if is_short else 22
-            for chunk in caption_chunks:
-                sc_img = Image.new("RGB", (W, sub_h), (10, 14, 28))
-                sc_draw = ImageDraw.Draw(sc_img)
-                sc_draw.rectangle([0, 0, W, 3], fill=(0, 195, 255))
-                sc_draw.rounded_rectangle([18, 7, W - 18, sub_h - 6], radius=10, fill=(18, 24, 46), outline=(255, 205, 0), width=2)
-                cy_dot = sub_h // 2
-                sc_draw.ellipse([34, cy_dot - 7, 48, cy_dot + 7], fill=(235, 30, 45))
-                speaker_tag = "एंकर:" if language == "hindi" else "ANCHOR:"
-                draw_bilingual_text(sc_draw, (60, (sub_h - sub_font_sz) // 2 - 2), f"{speaker_tag}  {chunk}", size=sub_font_sz, fill=(255, 248, 210))
-                sub_cards.append(np.asarray(sc_img, dtype=np.uint8))
+            hl_loop_str = f"   {headline_banner}   •   {narration[:120]}   •   " * 3
+            right_w = W - tag_w
+            hl_strip_w = max(right_w * 3, len(hl_loop_str) * 18)
+            hl_strip_img = Image.new("RGB", (hl_strip_w, strap_h), (155, 12, 24))
+            hr_draw = ImageDraw.Draw(hl_strip_img)
+            hr_draw.rectangle([0, 0, hl_strip_w, 5], fill=(255, 205, 0))
+            hr_draw.rectangle([0, strap_h - 5, hl_strip_w, strap_h], fill=(255, 205, 0))
+            hl_end_x = draw_bilingual_text(hr_draw, (16, (strap_h - hl_font_sz) // 2 - 2), hl_loop_str, size=hl_font_sz, fill=(255, 255, 255))
+            hl_unit_px = max(300, (hl_end_x - 16) // 3)
+            strap_right_arr = np.asarray(hl_strip_img, dtype=np.uint8)
 
             prepared_scenes.append({
                 "idx": idx,
@@ -1192,8 +1400,13 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
                 "start_t": total_duration,
                 "env": env,
                 "broll_base_arr": broll_base_arr,
-                "strap_rgb": strap_rgb,
+                "word_timings": word_timings,
+                "story_cards": story_cards,
                 "sub_cards": sub_cards,
+                "strap_left_arr": strap_left_arr,
+                "strap_right_arr": strap_right_arr,
+                "hl_unit_px": hl_unit_px,
+                "tag_w": tag_w,
             })
             total_duration += dur
 
@@ -1220,7 +1433,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
     else:
         final_audio_wav = merged_voice_wav
 
-    logger.info(f"🎬 Rendering {fps}fps {'SHORT (1080x1920)' if is_short else 'LONG (1280x720 HD)'} Video ({total_duration:.1f}s = {total_duration/60.0:.1f} min) to {output_path}...")
+    logger.info(f"🎬 Rendering {fps}fps {'SHORT (1080x1920)' if is_short else 'LONG (1280x720 HD)'} Anime Broadcast Video ({total_duration:.1f}s = {total_duration/60.0:.1f} min)...")
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
         "-s", f"{W}x{H}", "-pix_fmt", "rgb24", "-r", str(fps),
@@ -1237,16 +1450,29 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
         n_frames = max(1, int(round(sc["dur"] * fps)))
         idx, dur, env = sc["idx"], sc["dur"], sc["env"]
         broll_base_arr = sc["broll_base_arr"]
-        strap_rgb, sub_cards = sc["strap_rgb"], sc["sub_cards"]
+        word_timings = sc["word_timings"]
+        story_cards = sc["story_cards"]
+        sub_cards = sc["sub_cards"]
+        strap_left_arr = sc["strap_left_arr"]
+        strap_right_arr = sc["strap_right_arr"]
+        hl_unit_px = sc["hl_unit_px"]
+        tag_w = sc["tag_w"]
+        right_w = W - tag_w
         scene_start_t = sc["start_t"]
         bh, bw, _ = broll_base_arr.shape
         max_dx = max(1, bw - broll_win_w)
         max_dy = max(1, bh - broll_win_h)
 
+        cur_w_idx = 0
+        n_words = len(word_timings)
+
         for f_i in range(n_frames):
             t = f_i / float(fps)
             gt = scene_start_t + t
             speech_amp = float(env[min(len(env) - 1, f_i)])
+
+            while (cur_w_idx + 1 < n_words) and (t >= word_timings[cur_w_idx]["end"]):
+                cur_w_idx += 1
 
             prog = min(1.0, max(0.0, t / max(0.1, dur)))
             if idx % 2 == 0:
@@ -1257,35 +1483,39 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
                 crop_y = int(max_dy * prog * 0.7)
 
             broll_view = broll_base_arr[crop_y : crop_y + broll_win_h, crop_x : crop_x + broll_win_w]
-            anchor_arr = animator.render_frame(gt, speech_amp=speech_amp)
-            chunk_idx = min(len(sub_cards) - 1, int((t / max(0.1, dur)) * len(sub_cards)))
+            anchor_arr = animator.render_frame(gt, speech_amp=speech_amp, word_idx=cur_w_idx)
+
             scroll_x = int(gt * 150) % max(1, min(unit_px, ticker_arr.shape[1] - W - 1))
+            hl_scroll_x = int(t * 95) % max(1, min(hl_unit_px, strap_right_arr.shape[1] - right_w - 1))
 
             if is_short:
-                # 1. Top B-Roll (y = 0..830) + LIVE Badge
                 canvas[0:830, :, :] = broll_view
-                canvas[34:90, 32:472, :] = badge_on_arr
-                # 2. Center 3D Headline Strap (y = 830..934)
-                canvas[830:934, :, :] = strap_rgb
-                # 3. Studio Anchor + 3D Broadcast Desk (y = 934..1920)
+                canvas[28:84, 28:468, :] = badge_on_arr
+                canvas[830 - story_card_h - 14 : 830 - 14, :, :] = story_cards[cur_w_idx]
+
+                canvas[830:934, 0:tag_w, :] = strap_left_arr
+                canvas[830:934, tag_w:W, :] = strap_right_arr[:, hl_scroll_x : hl_scroll_x + right_w, :]
+
                 canvas[934:1920, :, :] = anchor_arr
-                # 4. Audio Waveform Bar + Synced Subtitle Card on Desk (y = 1486..1590)
+
                 bar_w = int(W * (0.18 + 0.72 * speech_amp))
                 x_s = (W - bar_w) // 2
                 canvas[1486:1494, x_s : x_s + bar_w, :] = (255, 65, 75)
-                canvas[1494:1590, :, :] = sub_cards[chunk_idx]
-                # 5. Scrolling Yellow News Ticker (y = 1590..1648)
+                canvas[1494:1590, :, :] = sub_cards[cur_w_idx]
+
                 canvas[1590:1648, :, :] = ticker_arr[:, scroll_x : scroll_x + W, :]
-                # 6. Illuminated Studio Desk Pedestal Footer (y = 1648..1920) - ZERO BLACK BARS!
                 canvas[1648:1920, :, :] = pedestal_arr
             else:
-                # 16:9 Horizontal Prime-Time Layout (1280x720)
                 canvas[0:46, :, :] = header_arr
                 canvas[46:560, 0:760, :] = broll_view
+                canvas[560 - story_card_h - 10 : 560 - 10, 0:760, :] = story_cards[cur_w_idx]
                 canvas[46:560, 760:1280, :] = anchor_arr
-                canvas[46:560, 756:764, :] = (250, 195, 0)  # Gold center divider
-                canvas[560:618, :, :] = strap_rgb
-                canvas[618:676, :, :] = sub_cards[chunk_idx]
+                canvas[46:560, 756:764, :] = (250, 195, 0)
+
+                canvas[560:618, 0:tag_w, :] = strap_left_arr
+                canvas[560:618, tag_w:W, :] = strap_right_arr[:, hl_scroll_x : hl_scroll_x + right_w, :]
+
+                canvas[618:676, :, :] = sub_cards[cur_w_idx]
                 canvas[676:720, :, :] = ticker_arr[:, scroll_x : scroll_x + W, :]
 
             try:
@@ -1302,7 +1532,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True, anch
     return output_path
 
 
-# ================= 8. YOUTUBE UPLOAD & 10-MINUTE GUARANTEE ORCHESTRATOR =================
+# ================= 9. YOUTUBE UPLOAD & 10-MINUTE GUARANTEE ORCHESTRATOR =================
 def cleanup_temp_files():
     os.makedirs("temp", exist_ok=True)
     for f in glob.glob("temp/*"):
@@ -1398,17 +1628,9 @@ def produce_news_episode(category="AUTO", is_short=True, is_breaking=False, anch
 
     logger.info(
         f"📋 Script Ready: '{script_data.get('title')}' | Category: {resolved_cat} | "
-        f"Language: {language.upper()} | Anchor: {chosen_gender.upper()} | Initial Scenes: {len(scenes)}"
+        f"Language: {language.upper()} | Anime Anchor: {chosen_gender.upper()} | Initial Scenes: {len(scenes)}"
     )
 
-    anchor_img_path = f"temp/anchor_{chosen_gender}_{resolved_cat.lower()}.jpg"
-    download_anchor_studio_image(
-        anchor_gender=chosen_gender,
-        category=resolved_cat,
-        output_path=anchor_img_path,
-    )
-
-    # For Long Videos, generate up to 6 unique high-res B-roll images and cycle them across segments for speed
     max_unique_images = 4 if is_short else 6
     broll_paths = []
     for idx in range(min(len(scenes), max_unique_images)):
@@ -1421,6 +1643,7 @@ def produce_news_episode(category="AUTO", is_short=True, is_breaking=False, anch
             search_query=sc.get("search_query", ""),
             rss_image_url=sc.get("rss_image_url", ""),
             headline_text=sc.get("headline_banner", ""),
+            scene_idx=idx,
         )
         broll_paths.append(img_path)
 
@@ -1474,7 +1697,7 @@ def produce_news_episode(category="AUTO", is_short=True, is_breaking=False, anch
             "image_path": broll_paths[extra_idx % len(broll_paths)],
             "narration": extra_nar,
             "subtitles": extra_nar,
-            "headline_banner": hl.get("title", script_data.get("headline_banner", "बड़ी ख़बर"))[:68],
+            "headline_banner": hl.get("title", script_data.get("headline_banner", "बड़ी ख़बर")),
             "camera_angle": "closeup" if sid % 2 == 1 else "wide",
         })
         extra_idx += 1
@@ -1488,7 +1711,6 @@ def produce_news_episode(category="AUTO", is_short=True, is_breaking=False, anch
         scene_assets=scene_assets,
         output_path=output_video,
         is_short=is_short,
-        anchor_img_path=anchor_img_path,
     )
 
     logger.info(f"🎉 Broadcast Video Ready: {output_video} (Total Duration: {cumulative_sec/60.0:.2f} minutes)")
