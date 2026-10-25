@@ -28,10 +28,9 @@ jobs:
       - name: Install Python Requirements
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install opencv-python-headless gTTS
+          pip install edge-tts gTTS requests Pillow numpy google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
 
-      - name: Run News Studio Bot & Upload to YouTube (Short + 10-Min Long Video)
+      - name: Run News Studio Bot & Upload to YouTube (Short + Long)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
@@ -45,5 +44,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: generated-news-videos
-          path: output/*.mp4
+          path: |
+            output/*.mp4
+            final_short.mp4
+            final_long.mp4
           retention-days: 3
