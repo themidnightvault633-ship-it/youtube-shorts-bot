@@ -1,331 +1,335 @@
+import os
 import json
-import random
 import time
-import logging
+import random
 import re
-import xml.etree.ElementTree as ET
+import html
+import logging
 import requests
-
+import xml.etree.ElementTree as ET
 from config import (
-    API_KEY, MODEL_NAME, HISTORY_FILE, LONG_SCRIPT_FILE,
-    NEWS_FEEDS, MAX_RETRIES, BREAKING_NEWS_KEYWORDS
+    GEMINI_API_KEY,
+    MODEL_NAME,
+    FALLBACK_MODELS,
+    NEWS_FEEDS,
+    CATEGORIES,
+    SHORT_MIN_SCENES,
+    SHORT_MAX_SCENES,
+    LONG_MIN_SCENES,
+    LONG_MAX_SCENES,
 )
 
-try:
-    from config import FALLBACK_MODELS
-except ImportError:
-    FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+logger = logging.getLogger("NewsBot.ScriptEngine")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+}
 
-
-def read_json(path, default):
-    if not path.exists():
-        return default
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
+_ANCHOR_TOGGLE = 0
 
 
-def clean_json_text(text: str) -> str:
-    """Markdown code fences (```json ... ```) ko safely remove karta hai."""
-    text = re.sub(r"^```json\s*", "", text.strip(), flags=re.MULTILINE)
-    text = re.sub(r"^```\s*", "", text.strip(), flags=re.MULTILINE)
-    text = re.sub(r"\s*```$", "", text.strip(), flags=re.MULTILINE)
-    return text.strip()
+def _pick_anchor_gender(override=None):
+    global _ANCHOR_TOGGLE
+    if override in ("male", "female"):
+        return override
+    gender = "female" if (_ANCHOR_TOGGLE % 2 == 0) else "male"
+    _ANCHOR_TOGGLE += 1
+    return gender
 
 
-def fetch_live_news_by_category():
-    """
-    RSS feeds ko National, International aur Tech me categorize karke fetch karta hai.
-    Strict 10s timeout ke sath taaki kabhi hang na ho.
-    """
-    categorized_news = {
-        "NATION": [],
-        "WORLD": [],
-        "TECHNOLOGY": [],
-        "BREAKING": []
-    }
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+def _clean_html_text(raw_text):
+    if not raw_text:
+        return ""
+    text = html.unescape(str(raw_text))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
-    feed_items = NEWS_FEEDS.items() if isinstance(NEWS_FEEDS, dict) else [
-        ("NATION", {"url": NEWS_FEEDS[2] if len(NEWS_FEEDS) > 2 else NEWS_FEEDS[0]}),
-        ("WORLD", {"url": NEWS_FEEDS[1] if len(NEWS_FEEDS) > 1 else NEWS_FEEDS[0]}),
-        ("TECHNOLOGY", {"url": NEWS_FEEDS[0]})
-    ]
 
-    for cat_key, info in feed_items:
-        url = info["url"] if isinstance(info, dict) else info
+def _extract_rss_image(item):
+    """Extracts any high-res news image URL embedded in an RSS <item>."""
+    for elem in item.iter():
+        tag_lower = elem.tag.lower()
+        if tag_lower.endswith("content") or tag_lower.endswith("thumbnail") or tag_lower.endswith("enclosure"):
+            url = elem.attrib.get("url") or elem.attrib.get("href")
+            if url and url.startswith("http") and not url.endswith(".mp3"):
+                return url
+    for child in item:
+        raw = child.text or ""
+        m = re.search(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', raw, re.IGNORECASE)
+        if m:
+            url = m.group(1)
+            if "1x1" not in url and "pixel" not in url:
+                return url
+    return ""
+
+
+def fetch_trending_news(category="NATION", max_items=8):
+    """Fetches real-time news headlines + summary + embedded media URLs from multiple RSS feeds."""
+    feed_cfg = NEWS_FEEDS.get(category, NEWS_FEEDS["NATION"])
+    urls = feed_cfg.get("urls", []) if isinstance(feed_cfg, dict) else (feed_cfg if isinstance(feed_cfg, list) else [feed_cfg])
+    headlines = []
+    seen_titles = set()
+
+    for url in urls:
+        if len(headlines) >= max_items:
+            break
         try:
-            resp = requests.get(url, headers=headers, timeout=10)
-            if resp.status_code == 200:
-                root = ET.fromstring(resp.content)
-                for item in root.findall(".//item")[:10]:
-                    title_elem = item.find("title")
-                    if title_elem is not None and title_elem.text:
-                        headline = title_elem.text.strip()
-                        clean_hl = headline.rsplit(" - ", 1)[0].strip() if " - " in headline else headline
-                        categorized_news[cat_key].append(clean_hl)
+            resp = requests.get(url, headers=HEADERS, timeout=12)
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+            for item in root.findall(".//item"):
+                title = _clean_html_text(item.findtext("title", ""))
+                desc = _clean_html_text(item.findtext("description", ""))
+                pub_date = _clean_html_text(item.findtext("pubDate", ""))
+                source_el = item.find("source")
+                source = _clean_html_text(source_el.text) if source_el is not None and source_el.text else "News Desk"
+                media_url = _extract_rss_image(item)
 
-                        headline_lower = clean_hl.lower()
-                        if any(kw in headline_lower for kw in BREAKING_NEWS_KEYWORDS):
-                            categorized_news["BREAKING"].append({
-                                "title": clean_hl,
-                                "source_category": cat_key
-                            })
+                clean_title = re.sub(r"\s+-\s+[^-]+$", "", title).strip() or title
+                norm_key = clean_title[:45].lower()
+                if not clean_title or norm_key in seen_titles:
+                    continue
+                seen_titles.add(norm_key)
+
+                headlines.append({
+                    "title": clean_title,
+                    "summary": desc[:300] if desc else clean_title,
+                    "published": pub_date,
+                    "source": source,
+                    "media_url": media_url,
+                })
+                if len(headlines) >= max_items:
+                    break
         except Exception as e:
-            logging.warning(f"Error fetching {cat_key} feed: {e}")
+            logger.warning(f"RSS fetch warning ({url}): {e}")
 
-    return categorized_news
-
-
-def build_instant_fallback_script(headline: str, target_category: str, is_breaking: bool, anchor_gender: str) -> dict:
-    """
-    Agar Gemini API server down ya slow ho, to live RSS headline se turant
-    broadcast-ready script taiyar karta hai taaki pipeline kabhi fail ya hang na ho.
-    """
-    is_world = (target_category == "WORLD")
-    lang = "English" if is_world else "Hinglish"
-
-    if is_world:
-        scenes = [
-            {
-                "scene_num": 1,
-                "hook_type": "Headline Alert",
-                "narration": f"Breaking global update coming in right now: {headline}.",
-                "image_prompt": f"Wide-angle photorealistic news broadcast B-roll of {headline}, dramatic lighting, 8k, no text"
-            },
-            {
-                "scene_num": 2,
-                "hook_type": "Context & Facts",
-                "narration": "Authorities and global analysts are closely monitoring the situation as major developments unfold across key international sectors.",
-                "image_prompt": f"Close-up journalistic B-roll showing strategic operations related to {headline}, 8k photorealistic, no text"
-            },
-            {
-                "scene_num": 3,
-                "hook_type": "Impact & Conflict",
-                "narration": "Experts warn this move could trigger massive economic and diplomatic ripple effects worldwide in the coming days.",
-                "image_prompt": "Dramatic global command center and diplomatic summit photography, 8k photorealistic, no text"
-            },
-            {
-                "scene_num": 4,
-                "hook_type": "Conclusion & Question",
-                "narration": "What do you think about this major global development? Share your thoughts in the comments and subscribe for instant updates.",
-                "image_prompt": "Futuristic high-tech world map projection and strategic data screens, 8k photorealistic, no text"
-            }
-        ]
-    else:
-        scenes = [
-            {
-                "scene_num": 1,
-                "hook_type": "Headline Alert",
-                "narration": f"Is waqt ki sabse badi khabar saamne aa rahi hai: {headline}.",
-                "image_prompt": f"Wide-angle photorealistic news B-roll of {headline}, cinematic lighting, 8k, no text"
-            },
-            {
-                "scene_num": 2,
-                "hook_type": "Context & Facts",
-                "narration": "Yeh mamla tezi se garma raha hai aur desh bhar ke experts is bade faisle aur ghatna par lagatar nazar banaye hue hain.",
-                "image_prompt": f"Detailed journalistic B-roll showing core subject of {headline}, 8k photorealistic, no text"
-            },
-            {
-                "scene_num": 3,
-                "hook_type": "Impact & Conflict",
-                "narration": "Aane wale dino mein iska seedha asar aam janta, technology aur desh ke bade sectors par dekhne ko mil sakta hai.",
-                "image_prompt": "Dramatic wide journalistic photo showing national scale impact in India, 8k photorealistic, no text"
-            },
-            {
-                "scene_num": 4,
-                "hook_type": "Conclusion & Question",
-                "narration": "Is badi khabar par aapki kya raay hai? Comment mein zaroor batayein aur rozana sabse tez news ke liye channel ko subscribe karein!",
-                "image_prompt": "Futuristic high-tech India and global map projection data screens in command center, 8k photorealistic, no text"
-            }
-        ]
-
-    short_title = f"{headline[:75]} #Shorts"
-    return {
-        "topic_selected": headline,
-        "category": target_category,
-        "is_breaking": is_breaking,
-        "language": lang,
-        "anchor_gender": anchor_gender,
-        "title": short_title,
-        "description": f"{headline}\n\nLatest Breaking News & Analysis.\n#News #BreakingNews #Shorts #IndiaNews",
-        "hashtags": ["#News", "#BreakingNews", "#Shorts"],
-        "scenes": scenes,
-        "long_video_package": {
-            "long_title": headline,
-            "thumbnail_idea": f"Bold breaking news graphic for {headline}",
-            "full_script_markdown": f"# {headline}\n\nFull coverage of {headline}."
-        }
-    }
+    if headlines:
+        logger.info(f"Fetched {len(headlines)} live headlines for {category}")
+    return headlines
 
 
-def call_gemini_rest_api(model_name: str, prompt: str, timeout_sec: int = 30) -> dict:
-    """
-    Direct REST API call with strict HTTP timeout=(10, timeout_sec).
-    Ye google-genai SDK ke infinite AFC hang bug ko 100% bypass karta hai.
-    """
-    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){model_name}:generateContent?key={API_KEY}"
+def _call_gemini_rest(model_name, prompt, api_key, timeout_sec=35):
+    """Direct REST API call to Gemini with strict timeout so GitHub Actions never hangs."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.7,
-            "responseMimeType": "application/json"
-        }
+            "temperature": 0.65,
+            "responseMimeType": "application/json",
+        },
     }
-    resp = requests.post(
-        url,
-        json=payload,
-        headers={"Content-Type": "application/json"},
-        timeout=(10, timeout_sec)
-    )
+    resp = requests.post(url, json=payload, timeout=(10, timeout_sec))
     if resp.status_code != 200:
         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:250]}")
+    data = resp.json()
+    candidates = data.get("candidates", [])
+    if not candidates:
+        raise RuntimeError("Empty candidates from Gemini REST API")
+    parts = candidates[0].get("content", {}).get("parts", [])
+    if not parts:
+        raise RuntimeError("Empty content parts from Gemini REST API")
+    return parts[0].get("text", "")
 
-    body = resp.json()
-    text = body["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(clean_json_text(text))
 
+def _build_local_fallback_script(category, headlines, is_short, is_breaking, anchor_gender, language):
+    """Builds a broadcast-grade Devanagari Hindi or English script directly from live RSS headlines."""
+    top = headlines[0] if headlines else {
+        "title": "भारत और दुनिया की इस वक्त की बड़ी खबरें",
+        "summary": "राष्ट्रीय और अंतरराष्ट्रीय स्तर पर आज कई अहम घटनाक्रम सामने आए हैं।",
+        "source": "News Bureau",
+        "media_url": "",
+    }
+    top_title = top["title"]
+    media_urls = [h.get("media_url", "") for h in headlines if h.get("media_url")]
 
-def generate_content_script(forced_category=None, force_anchor_gender=None):
-    """
-    AI News Director with strict 30s timeout per attempt + instant live-RSS fallback.
-    """
-    history = read_json(HISTORY_FILE, {"episodes": []})
-    used_titles = [ep.get("title", "") for ep in history.get("episodes", [])]
-
-    all_news = fetch_live_news_by_category()
-
-    is_breaking = False
-    if forced_category == "BREAKING" or (not forced_category and all_news["BREAKING"]):
-        is_breaking = True
-        target_category = all_news["BREAKING"][0]["source_category"] if all_news["BREAKING"] else "NATION"
-        candidate_headlines = [b["title"] for b in all_news["BREAKING"]]
-    elif forced_category in ["NATION", "WORLD", "TECHNOLOGY"]:
-        target_category = forced_category
-        candidate_headlines = all_news[forced_category]
+    if language == "hindi":
+        intro = (
+            f"नमस्कार, चौबीस घंटे लाइव न्यूज़ के विशेष बुलेटिन में आपका स्वागत है। "
+            f"इस वक्त की सबसे बड़ी और अहम खबर आ रही है: {top_title}।"
+        )
+        mid_1 = (
+            f"ताज़ा जानकारी के मुताबिक, {headlines[1]['title'] if len(headlines) > 1 else top.get('summary', top_title)}। "
+            f"प्रशासन और विशेषज्ञों की इस पूरे घटनाक्रम पर लगातार कड़ी नज़र बनी हुई है।"
+        )
+        mid_2 = (
+            f"वहीं अगली बड़ी खबर की बात करें तो, {headlines[2]['title'] if len(headlines) > 2 else 'देशभर में इस मुद्दे को लेकर हलचल तेज़ हो गई है और लगातार नए अपडेट सामने आ रहे हैं'}।"
+        )
+        mid_3 = (
+            f"इसके साथ ही एक और महत्वपूर्ण अपडेट सामने आया है: {headlines[3]['title'] if len(headlines) > 3 else 'आर्थिक और तकनीकी मोर्चे पर भी आज कई बड़े फैसले लिए गए हैं जिनका सीधा असर आम जनता पर पड़ेगा'}।"
+        )
+        mid_4 = (
+            f"विशेषज्ञों का मानना है कि {headlines[4]['title'] if len(headlines) > 4 else 'आने वाले कुछ घंटों में इस पूरे मामले पर आधिकारिक बयान जारी किया जा सकता है'}।"
+        )
+        outro = "इन तमाम बड़ी खबरों पर हमारी नज़र लगातार बनी हुई है। हर सटीक और तेज़ लाइव अपडेट के लिए चैनल को अभी सब्सक्राइब करें और वीडियो को शेयर करें। नमस्कार।"
+        narrations = [intro, mid_1, mid_2, outro] if is_short else [intro, mid_1, mid_2, mid_3, mid_4, outro]
+        banner = "बड़ी ख़बर: लाइव अपडेट" if not is_breaking else "ब्रेकिंग न्यूज़: बड़ी ख़बर"
     else:
-        target_category = random.choice(["NATION", "TECHNOLOGY", "WORLD"])
-        candidate_headlines = all_news[target_category]
+        intro = f"Welcome to our 24/7 Live Global News broadcast. Our top breaking story this hour: {top_title}."
+        mid_1 = (
+            f"According to the latest official dispatches, {headlines[1]['title'] if len(headlines) > 1 else top.get('summary', top_title)}. "
+            f"Authorities and international observers are closely tracking every development."
+        )
+        mid_2 = (
+            f"Meanwhile, in another major headline, {headlines[2]['title'] if len(headlines) > 2 else 'new diplomatic and economic responses are unfolding across major global capitals'}."
+        )
+        mid_3 = (
+            f"Furthermore, correspondents report that {headlines[3]['title'] if len(headlines) > 3 else 'key policy leaders are convening emergency sessions to address the broader regional impact'}."
+        )
+        mid_4 = (
+            f"In addition, {headlines[4]['title'] if len(headlines) > 4 else 'global markets and strategic analysts are reacting to these rapid developments'}."
+        )
+        outro = "We are tracking every development live from our global newsroom. Subscribe now for continuous breaking coverage."
+        narrations = [intro, mid_1, mid_2, outro] if is_short else [intro, mid_1, mid_2, mid_3, mid_4, outro]
+        banner = "BREAKING NEWS: LIVE REPORT"
 
-    fresh_headlines = [h for h in candidate_headlines if h not in used_titles]
-    if fresh_headlines:
-        candidate_headlines = fresh_headlines
+    scenes = []
+    for idx, text_nar in enumerate(narrations):
+        hl = headlines[idx] if idx < len(headlines) else top
+        kw = hl.get("title", top_title)
+        scenes.append({
+            "scene_id": idx + 1,
+            "narration": text_nar,
+            "subtitles": text_nar,
+            "headline_banner": hl.get("title", banner)[:68],
+            "search_query": kw,
+            "rss_image_url": hl.get("media_url", "") or (media_urls[0] if media_urls else ""),
+            "image_prompt": (
+                f"Photorealistic editorial news photography of {kw}, "
+                f"BBC and Aaj Tak broadcast journalism style, dramatic lighting, ultra-detailed, 8k, no text"
+            ),
+            "camera_angle": "closeup" if idx % 2 == 1 else "wide",
+        })
 
-    if not candidate_headlines:
-        candidate_headlines = [
-            "AI Agent Revolution: Autonomous Systems Transforming Global Tech Industry",
-            "India's New Semiconductor Fab & Space-Tech Breakthrough Milestone",
-            "Global Geopolitical Summit Announces Major Trade and Energy Policy Shift"
-        ]
+    ticker_items = [h["title"] for h in headlines[:6]] if headlines else [top_title]
+    ticker_sep = "  |  "
+    return {
+        "category": category,
+        "language": language,
+        "anchor_gender": anchor_gender,
+        "is_breaking": is_breaking,
+        "is_short": is_short,
+        "title": f"🔴 LIVE: {top_title[:75]} #Shorts" if is_short else f"🔴 LIVE Special Report: {top_title[:72]}",
+        "description": (
+            f"{top_title}\n\n"
+            f"Watch 24x7 Live News updates in Aaj Tak, News 24 & BBC broadcast style.\n"
+            f"{'#BreakingNews #LiveNews #HindiNews #Shorts' if is_short else '#BreakingNews #LiveNews #HindiNews #SpecialReport'}"
+        ),
+        "tags": ["Breaking News", "Live News", "Hindi News", "Aaj Tak", "News 24", "BBC News", category] + (["Shorts"] if is_short else ["Special Report", "Full Bulletin"]),
+        "headline_banner": banner,
+        "ticker_text": ticker_sep.join(ticker_items),
+        "scenes": scenes,
+    }
 
-    anchor_gender = force_anchor_gender or "female"
-    target_language = "English" if target_category == "WORLD" else "Hinglish (Hindi written in English alphabets with high energy)"
 
-    prompt = f"""
-You are an elite TV Broadcast News Director.
+def generate_news_script(category=None, is_short=True, is_breaking=False, anchor_gender=None):
+    """Generates a complete TV Broadcast News script in pure Devanagari Hindi or Broadcast English."""
+    if not category or category == "AUTO":
+        category = random.choice(CATEGORIES)
 
-CATEGORY: {target_category} (Is Breaking: {is_breaking})
-TARGET LANGUAGE: {target_language}
-LEAD ANCHOR GENDER: {anchor_gender}
+    cat_upper = category.upper()
+    language = "english" if cat_upper == "WORLD" else "hindi"
+    chosen_gender = _pick_anchor_gender(anchor_gender)
 
-RECENT HEADLINES:
-{json.dumps(candidate_headlines[:8], ensure_ascii=False)}
+    headlines = fetch_trending_news(cat_upper, max_items=8)
+    num_scenes = 4 if is_short else 6
+    words_per_scene = "18 to 26 words" if is_short else "32 to 45 words (in-depth prime-time bulletin analysis)"
 
-RECENTLY USED TITLES (DO NOT REPEAT):
-{json.dumps(used_titles[-20:], ensure_ascii=False)}
+    headlines_context = "\n".join(
+        [f"{i+1}. Headline: {h['title']} | Details: {h['summary']} (Source: {h['source']})" for i, h in enumerate(headlines)]
+    ) or "1. Major National and Global Breaking Developments Today"
 
-TASK:
-1. Select the single most shocking/impactful headline.
-2. Produce a **35-45 second YouTube Short Script** (4 structured scenes).
-3. Produce a **Long-form In-depth Video Blueprint** on the same topic.
+    if language == "hindi":
+        lang_instruction = (
+            "Write ALL `narration`, `subtitles`, `headline_banner`, and `ticker_text` strictly in PURE DEVANAGARI HINDI "
+            "(देवनागरी लिपि, e.g., 'नमस्कार, इस वक्त की सबसे बड़ी खबर आ रही है...'). "
+            "DO NOT use Romanized Hinglish alphabets because the Hindi neural TTS voice requires pure Devanagari script "
+            "to pronounce words like a professional Aaj Tak / News 24 television anchor."
+        )
+    else:
+        lang_instruction = (
+            "Write ALL `narration`, `subtitles`, `headline_banner`, and `ticker_text` in crisp, authoritative "
+            "BBC World News broadcast English. Sound like a live prime-time international news anchor."
+        )
 
-CRITICAL VISUAL RULES:
-- The bottom half of our video ALREADY shows the live TV News Anchor in the studio.
-- Therefore, each scene's `image_prompt` MUST describe ONLY the real-world news event, location, machinery, technology, parliament, infrastructure, or dramatic action B-roll — NEVER include a news anchor, studio presenter, or human portrait looking at the camera in `image_prompt`!
-- Narration language MUST strictly follow {target_language}.
-- Keep anchor persona consistent as `{anchor_gender}` across all scenes.
-- Return ONLY valid JSON format.
+    prompt = f"""You are the Executive Producer for a 24/7 Live Television News Network (styled after BBC News, Aaj Tak, and News 24).
+Create a {num_scenes}-scene {'YouTube Short (9:16)' if is_short else 'Full Prime-Time Special Report Long Video (16:9)'} TV news broadcast script based on these real-time headlines:
+{headlines_context}
 
-JSON STRUCTURE:
+CRITICAL RULES:
+1. {lang_instruction}
+2. Anchor Gender for this broadcast: "{chosen_gender}".
+3. Total scenes: EXACTLY {num_scenes}. Each scene's `narration` must be {words_per_scene}.
+4. For every scene, provide:
+   - `scene_id`: integer (1 to {num_scenes})
+   - `narration`: spoken anchor script (Pure Devanagari Hindi if language=='hindi', else English)
+   - `subtitles`: same as narration
+   - `headline_banner`: short 4-8 word punchy breaking strap for that scene (Devanagari Hindi if hindi, else English)
+   - `search_query`: 4-6 English keywords describing the real-world event/person/location for fetching real news event photography
+   - `image_prompt`: Detailed English prompt for generating photorealistic editorial news photography of the event (NO text/words in image)
+   - `camera_angle`: alternate between "wide" and "closeup"
+
+Return ONLY valid JSON with this exact structure:
 {{
-  "topic_selected": "Chosen headline",
-  "category": "{target_category}",
-  "is_breaking": {str(is_breaking).lower()},
-  "language": "{target_language}",
-  "anchor_gender": "{anchor_gender}",
-  "title": "Shocking Clickable Short Title #Shorts",
-  "description": "Engaging description with key takeaways and SEO tags",
-  "hashtags": ["#News", "#BreakingNews", "#Shorts"],
+  "title": "Catchy YouTube title (max 85 chars, {'include #Shorts' if is_short else 'DO NOT include #Shorts'})",
+  "description": "YouTube description with summary and hashtags",
+  "tags": ["Breaking News", "Live News"],
+  "headline_banner": "Main top story strap (4-7 words)",
+  "ticker_text": "4-5 top headlines separated by | for the bottom scrolling news ticker",
   "scenes": [
     {{
-      "scene_num": 1,
-      "hook_type": "Headline Alert",
-      "narration": "Opening hook in {target_language}",
-      "image_prompt": "Wide-angle photorealistic news B-roll of the actual event location or technology, cinematic lighting, 8k, no people staring at camera, no text"
-    }},
-    {{
-      "scene_num": 2,
-      "hook_type": "Context & Facts",
-      "narration": "Deep fact explanation in {target_language}",
-      "image_prompt": "Close-up detailed journalistic B-roll showing the core subject/hardware/facility in action, 8k photorealistic, no text"
-    }},
-    {{
-      "scene_num": 3,
-      "hook_type": "Impact & Conflict",
-      "narration": "Why this matters to the viewer in {target_language}",
-      "image_prompt": "Dramatic aerial or wide journalistic photo showing national or global scale impact, 8k photorealistic, no text"
-    }},
-    {{
-      "scene_num": 4,
-      "hook_type": "Conclusion & Question",
-      "narration": "Closing remark and call to comment/subscribe in {target_language}",
-      "image_prompt": "Futuristic high-tech global map projection and financial/strategic data screens in a dark command center, 8k photorealistic, no people, no text"
+      "scene_id": 1,
+      "narration": "...",
+      "subtitles": "...",
+      "headline_banner": "...",
+      "search_query": "...",
+      "image_prompt": "...",
+      "camera_angle": "wide"
     }}
-  ],
-  "long_video_package": {{
-    "long_title": "Catchy 16:9 Long Video Title",
-    "thumbnail_idea": "Photorealistic thumbnail composition description with text placement",
-    "full_script_markdown": "Full 8-minute comprehensive investigative script with timecodes and B-roll notes"
-  }}
-}}
-"""
+  ]
+}}"""
 
-    models_to_try = []
+    models_to_try = ["gemini-3.8-flash"]
     for m in [MODEL_NAME] + list(FALLBACK_MODELS):
         if m and m not in models_to_try:
             models_to_try.append(m)
 
-    for attempt, current_model in enumerate(models_to_try, start=1):
-        try:
-            logging.info(f"🤖 Requesting script from {current_model} (attempt {attempt}/{len(models_to_try)})...")
-            data = call_gemini_rest_api(current_model, prompt, timeout_sec=30)
+    if GEMINI_API_KEY:
+        for model_name in models_to_try:
+            try:
+                logger.info(f"Requesting {'SHORT' if is_short else 'LONG'} script from {model_name} (lang={language}, anchor={chosen_gender})...")
+                raw_json = _call_gemini_rest(model_name, prompt, GEMINI_API_KEY, timeout_sec=35)
+                cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_json.strip(), flags=re.MULTILINE)
+                data = json.loads(cleaned)
+                scenes = data.get("scenes", [])
+                if not scenes:
+                    raise ValueError("No scenes in JSON response")
 
-            if "scenes" in data and len(data["scenes"]) >= 3:
-                data["scenes"] = data["scenes"][:4]
-                long_pkg = data.get("long_video_package", {})
-                if long_pkg:
-                    with open(LONG_SCRIPT_FILE, "w", encoding="utf-8") as f:
-                        f.write(f"# LONG VIDEO BLUEPRINT ({data.get('category')})\n\n")
-                        f.write(f"## Topic: {data.get('topic_selected')}\n")
-                        f.write(f"### Title: {long_pkg.get('long_title')}\n")
-                        f.write(f"### Thumbnail Concept:\n{long_pkg.get('thumbnail_idea')}\n\n")
-                        f.write(f"---\n\n## Full 8-Minute Script:\n\n{long_pkg.get('full_script_markdown')}\n")
+                for idx, sc in enumerate(scenes):
+                    hl = headlines[idx] if idx < len(headlines) else (headlines[0] if headlines else {})
+                    sc["scene_id"] = idx + 1
+                    sc["rss_image_url"] = hl.get("media_url", "")
+                    if not sc.get("search_query"):
+                        sc["search_query"] = hl.get("title", "Breaking News India World")
+                    if not sc.get("headline_banner"):
+                        sc["headline_banner"] = data.get("headline_banner", "BREAKING NEWS")
+                    if not sc.get("camera_angle"):
+                        sc["camera_angle"] = "closeup" if idx % 2 == 1 else "wide"
 
-                logging.info(f"✓ Script generated ({current_model}): {data.get('title')}")
+                data["category"] = cat_upper
+                data["language"] = language
+                data["anchor_gender"] = chosen_gender
+                data["is_breaking"] = is_breaking
+                data["is_short"] = is_short
+                logger.info(f"✅ Generated {len(scenes)}-scene {language.upper()} {'SHORT' if is_short else 'LONG'} script via {model_name}")
                 return data
+            except Exception as e:
+                logger.warning(f"Model {model_name} failed: {e}. Trying next fallback...")
+                time.sleep(1)
 
-        except Exception as e:
-            logging.warning(f"Model {current_model} failed/timed out: {e}")
-            time.sleep(2)
-
-    logging.warning("⚠️ All Gemini endpoints busy; using Instant Live-RSS Script Generator fallback!")
-    return build_instant_fallback_script(
-        headline=candidate_headlines[0],
-        target_category=target_category,
-        is_breaking=is_breaking,
-        anchor_gender=anchor_gender
-    )
+    logger.info("Using smart live-RSS broadcast script builder...")
+    return _build_local_fallback_script(cat_upper, headlines, is_short, is_breaking, chosen_gender, language)
