@@ -4,7 +4,6 @@ import time
 import glob
 import argparse
 import logging
-import schedule
 from datetime import datetime
 
 from config import (
@@ -14,8 +13,6 @@ from config import (
     CATEGORIES,
     SHORTS_INTERVAL_HOURS,
     ENABLE_LONG_VIDEOS,
-    LONG_VIDEO_TIME,
-    BREAKING_CHECK_MINS,
 )
 from script_engine import generate_news_script
 from voice_engine import generate_voice
@@ -233,23 +230,12 @@ def main():
             )
         return
 
-    logger.info("📡 Starting 24/7 Autonomous TV News Scheduler...")
-    schedule.every(SHORTS_INTERVAL_HOURS).hours.do(
-        produce_news_episode, category="AUTO", is_short=True, is_breaking=False
-    )
-    if ENABLE_LONG_VIDEOS:
-        schedule.every().day.at(LONG_VIDEO_TIME).do(
-            produce_news_episode, category="AUTO", is_short=False, is_breaking=False
-        )
-
-    # Produce first Short + Long episode on startup
-    produce_news_episode(category=args.category, is_short=True, is_breaking=False, anchor_gender=anchor_override)
-    if ENABLE_LONG_VIDEOS:
-        produce_news_episode(category=args.category, is_short=False, is_breaking=False, anchor_gender=anchor_override)
-
+    logger.info("📡 Starting 24/7 Autonomous TV News Loop...")
     while True:
-        schedule.run_pending()
-        time.sleep(30)
+        produce_news_episode(category=args.category, is_short=True, is_breaking=False, anchor_gender=anchor_override)
+        if ENABLE_LONG_VIDEOS:
+            produce_news_episode(category=args.category, is_short=False, is_breaking=False, anchor_gender=anchor_override)
+        time.sleep(max(1, SHORTS_INTERVAL_HOURS) * 3600)
 
 
 if __name__ == "__main__":
