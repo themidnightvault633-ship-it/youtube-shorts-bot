@@ -1,51 +1,79 @@
-name: 24/7 AI News Studio Bot
+name: 24/7 Autonomous AI News Channel
 
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    # 02:30 UTC = 08:00 AM IST (Subah: 24 Ghante ki Top 100 Superfast News)
+    # 10:30 UTC = 04:00 PM IST (Dopahar: Din ki Badi & Important In-Depth News)
+    # 16:30 UTC = 10:00 PM IST (Saam: Dinbhar ki Top 50 Superfast News)
+    - cron: '30 2,10,16 * * *'
   workflow_dispatch:
+    inputs:
+      video_type:
+        description: 'Video format (both, short, long)'
+        required: false
+        default: 'both'
+      category:
+        description: 'News Category (AUTO, NATION, WORLD, TECHNOLOGY)'
+        required: false
+        default: 'AUTO'
+      edition:
+        description: 'Long Video Edition (auto, morning, afternoon, evening)'
+        required: false
+        default: 'auto'
+
+permissions:
+  contents: write
 
 jobs:
-  run-news-bot:
+  broadcast_news:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
-      - name: Install System Dependencies (FFmpeg & Hindi/English Fonts)
+      - name: Install FFmpeg & Hindi Devanagari Fonts
         run: |
-          sudo apt-get update
+          sudo apt-get update -y
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-dejavu-core
 
-      - name: Install Python Requirements
+      - name: Install Python Dependencies
         run: |
-          pip install --upgrade pip
-          pip install edge-tts gTTS requests Pillow numpy google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+          python -m pip install --upgrade pip
+          pip install edge-tts gTTS requests Pillow numpy google-genai google-api-python-client google-auth-oauthlib google-auth-httplib2
 
-      - name: Run News Studio Bot & Upload to YouTube (Short + Long)
+      - name: Verify YouTube OAuth Connection
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          python main.py --check-youtube || true
+
+      - name: Generate & Upload Live News Videos to YouTube
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
-          python -u main.py --once --type both
+          python main.py --once --type "${{ github.event.inputs.video_type || 'both' }}" --category "${{ github.event.inputs.category || 'AUTO' }}" --edition "${{ github.event.inputs.edition || 'auto' }}"
 
-      - name: Save Generated Video Artifacts
+      - name: Upload Generated Videos as Downloadable Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: generated-news-videos
           path: |
             output/*.mp4
+            output/YOUTUBE_UPLOAD_REPORT.txt
             final_short.mp4
             final_long.mp4
-          retention-days: 3
+          if-no-files-found: warn
+          retention-days: 7
