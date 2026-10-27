@@ -40,11 +40,11 @@ YT_REFRESH_TOKEN = _clean_secret(os.environ.get("YT_REFRESH_TOKEN", ""))
 CATEGORIES = ["NATION", "WORLD", "TECHNOLOGY"]
 SHORTS_INTERVAL_HOURS = 3
 ENABLE_LONG_VIDEOS = True
-MIN_LONG_VIDEO_SECONDS = 605.0  # 10+ minutes (605s) for Long Videos
+MIN_LONG_VIDEO_SECONDS = 605.0
 
-EDITION_MORNING = "MORNING"      # Subah: 24 घंटे की 100 बड़ी ख़बरें (1 to 100 continuous counter)
-EDITION_AFTERNOON = "AFTERNOON"  # Dopahar: आज की सबसे बड़ी व अहम ख़बरें (In-depth analysis bulletin)
-EDITION_EVENING = "EVENING"      # Saam: दिनभर की Top 50 बड़ी ख़बरें (1 to 50 continuous counter)
+EDITION_MORNING = "MORNING"
+EDITION_AFTERNOON = "AFTERNOON"
+EDITION_EVENING = "EVENING"
 
 EDITION_CONFIGS = {
     EDITION_MORNING: {
@@ -170,6 +170,8 @@ def _load_font_pair(size=36):
     return pair
 
 def measure_bilingual_text(draw, text, size=34):
+    if isinstance(draw, Image.Image):
+        draw = ImageDraw.Draw(draw)
     deva_font, latin_font = _load_font_pair(size)
     clean = re.sub(r"[\U00010000-\U0010ffff]", "", str(text or ""))
     runs = re.findall(r"[\u0900-\u097F]+|[^\u0900-\u097F]+", clean)
@@ -182,6 +184,8 @@ def measure_bilingual_text(draw, text, size=34):
     return total_w
 
 def draw_bilingual_text(draw, xy, text, size=34, fill=(255, 255, 255)):
+    if isinstance(draw, Image.Image):
+        draw = ImageDraw.Draw(draw)
     deva_font, latin_font = _load_font_pair(size)
     clean = re.sub(r"[\U00010000-\U0010ffff]", "", str(text or ""))
     runs = re.findall(r"[\u0900-\u097F]+|[^\u0900-\u097F]+", clean)
@@ -213,7 +217,7 @@ def build_word_timings(narration, duration):
     timings[-1]["end"] = duration + 1.0
     return timings
 
-# ================= 3. UNIQUE NEWS ENGINE & SCRIPT FUNNEL =================
+# ================= 3. NEWS POOL & SCRIPT ENGINE =================
 NATIONAL_STORIES = [
     {"title": "संसद के नए सत्र में डिजिटल सुरक्षा और नागरिक अधिकारों पर अहम चर्चा शुरू", "summary": "संसद के सत्र में डिजिटल सुरक्षा विधेयक पर विभिन्न दलों के नेताओं ने अपने महत्वपूर्ण सुझाव प्रस्तुत किए।", "category_tag": "राष्ट्रीय"},
     {"title": "देश के 100 नए शहरों में स्मार्ट अर्बन इलेक्ट्रिक ट्रांसपोर्ट प्रोजेक्ट को मंजूरी मिली", "summary": "केंद्र सरकार ने शहरी परिवहन को सुगम और पर्यावरण अनुकूल बनाने के लिए नए फंड की घोषणा की है।", "category_tag": "राष्ट्रीय"},
@@ -764,7 +768,7 @@ def download_scene_image(prompt, output_path, is_short=True, search_query="", rs
         is_short=is_short,
     )
 
-# ================= 6. PHOTOREALISTIC REAL & 2.5D ANCHOR RIG =================
+# ================= 6. PHOTOREALISTIC REAL ANCHOR RIG =================
 class RealStudioAnchor:
     is_real = True
 
@@ -802,7 +806,7 @@ class RealStudioAnchor:
             logger.warning(f"FFmpeg anchor frame loader error: {e}")
 
         self.total = len(self.frames)
-        logger.info(f"Loaded {self.total} anchor frames ({target_w}x{target_h}) from {video_path}")
+        logger.info(f"Loaded {self.total} photorealistic anchor frames ({target_w}x{target_h}) from {video_path} [Zero-Watermark Filter Active]")
         if self.total > 15:
             self.speak_start = min(18, self.total // 4)
             self.speak_end = min(92, int(self.total * 0.78))
@@ -827,14 +831,44 @@ class RealStudioAnchor:
 
 def find_real_anchor_video(preferred_gender="female"):
     g = str(preferred_gender or "female").lower()
-    priority = (
-        ["anchor_real_male.mp4", "assets/anchor_real_male.mp4", "1000122786.mp4", "assets/1000122786.mp4", "anchor_real.mp4", "assets/anchor_real.mp4", "anchor_real_female.mp4", "anchor_studio.mp4"]
-        if g == "male" else
-        ["anchor_real_female.mp4", "assets/anchor_real_female.mp4", "anchor_real.mp4", "assets/anchor_real.mp4", "anchor_real_male.mp4", "anchor_studio.mp4"]
-    )
+    if g == "male":
+        priority = [
+            "anchor_real_male.mp4",
+            "assets/anchor_real_male.mp4",
+            "1000122786.mp4",
+            "assets/1000122786.mp4",
+            "user_uploaded_files/ttl=63d/user_uploaded/1000122786.mp4",
+            "anchor_real.mp4",
+            "assets/anchor_real.mp4",
+            "anchor_real_female.mp4",
+            "assets/anchor_real_female.mp4",
+            "anchor_studio.mp4",
+            "assets/anchor_studio.mp4",
+        ]
+    else:
+        priority = [
+            "anchor_real_female.mp4",
+            "assets/anchor_real_female.mp4",
+            "anchor_real.mp4",
+            "assets/anchor_real.mp4",
+            "PixVerse_V6_Image_Text_540P_Make_a_female_anco.mp4",
+            "assets/PixVerse_V6_Image_Text_540P_Make_a_female_anco.mp4",
+            "user_uploaded_files/ttl=63d/user_uploaded/PixVerse_V6_Image_Text_540P_Make_a_female_anco.mp4",
+            "1000121747.mp4",
+            "assets/1000121747.mp4",
+            "user_uploaded_files/ttl=63d/user_uploaded/1000121747.mp4",
+            "anchor_studio.mp4",
+            "assets/anchor_studio.mp4",
+            "anchor_real_male.mp4",
+            "assets/anchor_real_male.mp4",
+            "1000122786.mp4",
+            "assets/1000122786.mp4",
+        ]
+
     for c in priority:
         if os.path.exists(c) and os.path.getsize(c) > 20000:
             return c
+
     for p in glob.glob("user_uploaded_files/*/*/*.mp4") + glob.glob("assets/*.mp4") + glob.glob("*.mp4"):
         base = os.path.basename(p).lower()
         if not base.startswith(("short_", "long_", "final_")) and "output" not in p and os.path.getsize(p) > 20000:
@@ -896,13 +930,15 @@ def _build_word_synced_subtitle_cards(W, sub_h, word_timings, language="hindi", 
         draw_bilingual_text(du, (56, ty), speaker_tag, size=sub_font_sz, fill=(255, 205, 0))
 
         base_sp = base_up.copy()
+        ds = ImageDraw.Draw(base_sp)
+
         tx = start_x
         line_words = []
         for wt in ln:
             w_str = wt["word"]
             w_px = wt["sub_px"]
             draw_bilingual_text(du, (tx, ty), w_str, size=sub_font_sz, fill=(160, 188, 225))
-            draw_bilingual_text(base_sp, (tx, ty), w_str, size=sub_font_sz, fill=(255, 255, 255))
+            draw_bilingual_text(ds, (tx, ty), w_str, size=sub_font_sz, fill=(255, 255, 255))
             line_words.append((wt["idx"], w_str, tx, w_px))
             tx += w_px + space_px
 
@@ -1001,16 +1037,17 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     if is_short:
         broll_win_w, broll_win_h = W, 830
         strap_h = 104
-        anchor_w, anchor_h = W, H - broll_win_w - strap_h
+        anchor_w = W
+        anchor_h = H - broll_win_h - strap_h  # exactly 986px (830 + 104 + 986 = 1920)
         sub_h = 96
         desk_ratio = 0.56
     else:
         header_h = 46
         strap_h = 58
         sub_h = 58
-        body_h = H - header_h - strap_h - sub_h - ticker_h
-        anchor_w, anchor_h = 520, body_h
-        broll_win_w, broll_win_h = W - anchor_w, body_h
+        body_h = H - header_h - strap_h - sub_h - ticker_h  # 514px
+        anchor_w, anchor_h = 520, body_h  # 520x514
+        broll_win_w, broll_win_h = W - anchor_w, body_h  # 760x514
         desk_ratio = 0.86
 
     real_video = find_real_anchor_video(anchor_gender)
@@ -1112,7 +1149,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     else:
         final_audio_wav = merged_voice_wav
 
-    logger.info(f"🎬 Rendering {fps}fps {'SHORT (1080x1920)' if is_short else f'LONG ({edition} - {len(prepared_scenes)} Stories)'} Video ({total_duration:.1f}s)...")
+    logger.info(f"🎬 Rendering {fps}fps {'SHORT (1080x1920)' if is_short else f'LONG ({edition} - {len(prepared_scenes)} Stories)'} Video ({total_duration:.1f}s = {total_duration/60.0:.1f} min)...")
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo",
         "-s", f"{W}x{H}", "-pix_fmt", "rgb24", "-r", str(fps),
@@ -1175,7 +1212,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 canvas[1764:1860, :, :] = sub_cards[cur_w_idx]
                 canvas[1860:1918, :, :] = ticker_arr[:, scroll_x : scroll_x + W, :]
             else:
-                # 16:9 Broadcast Studio: Anchor on LEFT (0..520), News Visual Window on RIGHT (520..1280)
                 canvas[0:46, :, :] = header_arr
                 canvas[46:560, 0:520, :] = anchor_arr
                 canvas[46:560, 516:524, :] = (250, 195, 0)
@@ -1220,7 +1256,7 @@ def _mirror_video_for_github_artifacts(video_path, is_short=True):
             if d_dir:
                 os.makedirs(d_dir, exist_ok=True)
             shutil.copy2(video_path, dst)
-            logger.info(f"📦 Saved artifact copy: {dst}")
+            logger.info(f"📦 Saved artifact copy for download: {dst}")
         except Exception as e:
             logger.warning(f"Artifact mirror warning ({dst}): {e}")
 
@@ -1308,7 +1344,6 @@ def build_comprehensive_youtube_metadata(script_data, is_short=False):
         ]
         return clean_desc, tags
 
-    # Long Video Description: 4,500+ characters with all 100 story chapters indexed
     desc_lines = []
     desc_lines.append(f"{title}\n")
     desc_lines.append(
@@ -1452,7 +1487,6 @@ def upload_to_youtube(video_path, script_data, is_short=True):
 def produce_news_episode(category="AUTO", is_short=True, is_breaking=False, anchor_gender=None, edition="auto", skip_upload=False):
     resolved_edition = get_current_edition() if edition == "auto" else edition.upper()
     cfg = EDITION_CONFIGS.get(resolved_edition, EDITION_CONFIGS[EDITION_MORNING])
-    tgt_cnt = cfg.get("target_count", 100)
 
     cleanup_temp_files()
     os.makedirs("output", exist_ok=True)
