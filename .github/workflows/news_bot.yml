@@ -2,9 +2,9 @@ name: 24/7 Autonomous AI News Channel
 
 on:
   schedule:
-    # 02:30 UTC = 08:00 AM IST (Subah: 24 Ghante ki Top 100 Superfast News)
-    # 10:30 UTC = 04:00 PM IST (Dopahar: Din ki Badi & Important In-Depth News)
-    # 16:30 UTC = 10:00 PM IST (Saam: Dinbhar ki Top 50 Superfast News)
+    # 02:30 UTC = 08:00 AM IST (सुबह का महाबुलेटिन)
+    # 10:30 UTC = 04:00 PM IST (दोपहर का इन-डेप्थ बुलेटिन)
+    # 16:30 UTC = 10:00 PM IST (शाम का सुपरफास्ट बुलेटिन)
     - cron: '30 2,10,16 * * *'
   workflow_dispatch:
     inputs:
@@ -75,6 +75,14 @@ jobs:
         run: |
           python main.py --once --type "${{ github.event.inputs.video_type || 'both' }}" --category "${{ github.event.inputs.category || 'AUTO' }}" --edition "${{ github.event.inputs.edition || 'auto' }}"
 
+      - name: Save & Commit Audience Analytics Feedback Loop
+        if: always()
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "NewsBot Analytics Engine"
+          git add assets/topic_analytics.json || true
+          git diff --staged --quiet || (git commit -m "Auto-update YouTube topic analytics feedback loop [skip ci]" && git push) || true
+
       - name: Upload Generated Videos as Downloadable Artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,8 +90,8 @@ jobs:
           name: generated-news-videos
           path: |
             output/*.mp4
-            output/YOUTUBE_UPLOAD_REPORT.txt
             final_short.mp4
             final_long.mp4
+            temp/broadcast_thumb.jpg
           if-no-files-found: warn
           retention-days: 7
