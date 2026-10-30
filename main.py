@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-24/7 Autonomous AI TV News Network Engine (Professional Red Team Edition)
+24/7 Autonomous AI TV News Network Engine
+Official Channel: NEXORA NEWS (नेक्सोरा न्यूज़)
+Tagline: THE WORLD. THE NEXT. THE NEWS. (सही खबर | तेज़ नज़र | बेहतर कल)
+Category: National, International & Technology | AI News Network
 Features:
-- Real Anchor Video Engine (Zero-Watermark Crop + Audio-Cadence Lipsync)
+- Dedicated Studio Intro & Outro for Long Videos (Opening Hook + Closing CTA)
+- Real Anchor Video Engine (Smooth 1x Playback, Zero Watermark, Zero Jitter)
 - Authentic Ground Photo Engine (Publisher og:image + Press Commons)
-- 3-Tier Broadcast Aston (Location Kicker, Glassmorphic Strap, Live Pill)
+- 3-Tier Broadcast Aston (Location Kicker, Glassmorphic Strap, Live Counter)
 - Sound Design: 120-BPM Newsroom Pulse Bed + EBU R128 (-14 LUFS) Mastering
-- Automated Clickable 1280x720 YouTube Thumbnail Generator & API Uploader
-- YouTube Analytics Feedback Loop (Auto-Prioritizes Winning Topics)
+- High-CTR Clickable 1280x720 Thumbnail Generator & API Uploader
+- YouTube Audience Analytics Feedback Loop (Auto-Prioritizes Winning Topics)
 """
 
 import os, sys, re, glob, json, time, math, random, asyncio, logging, argparse, subprocess, urllib.parse, wave
@@ -18,18 +22,23 @@ import requests, numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
-logger = logging.getLogger("NewsBot")
+logger = logging.getLogger("NexoraNews")
 
-# ================= 1. CONFIG & CREDENTIALS =================
+# ================= 1. BRANDING & CREDENTIALS =================
 def _clean(v): return (v or "").strip().strip('"').strip("'").strip()
 GEMINI_API_KEY = _clean(os.environ.get("GEMINI_API_KEY", ""))
 YT_CLIENT_ID = _clean(os.environ.get("YT_CLIENT_ID", ""))
 YT_CLIENT_SECRET = _clean(os.environ.get("YT_CLIENT_SECRET", ""))
 YT_REFRESH_TOKEN = _clean(os.environ.get("YT_REFRESH_TOKEN", ""))
 
-CHANNEL_NAME = "BHARAT 24"
+CHANNEL_NAME = "NEXORA NEWS"
+CHANNEL_NAME_HI = "नेक्सोरा न्यूज़"
+TAGLINE = "THE WORLD. THE NEXT. THE NEWS."
+TAGLINE_HI = "सही खबर | तेज़ नज़र | बेहतर कल"
+
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36"}
 TOPIC_ANALYTICS_FILE = os.path.join("assets", "topic_analytics.json")
+LOGO_PATH = os.path.join("assets", "channel_logo.png")
 
 TOPIC_TAXONOMY = {
     "DEFENSE_SECURITY": ["सेना", "बॉर्डर", "मिसाइल", "चीन", "पाकिस्तान", "युद्ध", "राफेल", "drdo", "आर्मी", "नेवी", "एयरफोर्स", "हमला", "सुरक्षा", "सैनिक", "defence"],
@@ -90,7 +99,7 @@ def measure_text(draw, text, size=28):
     except Exception:
         return len(text) * int(size * 0.58)
 
-# ================= 3. TOPIC ANALYTICS & FEEDBACK =================
+# ================= 3. TOPIC ANALYTICS & REINFORCEMENT =================
 def classify_headline_topic(headline):
     hl = (headline or "").lower()
     sc = {t: sum(1 for kw in kws if kw in hl) for t, kws in TOPIC_TAXONOMY.items()}
@@ -114,7 +123,7 @@ def get_recommended_topic():
     rec = load_topic_analytics().get("recommended_topic")
     return rec if rec in TOPIC_TAXONOMY else "DEFENSE_SECURITY"
 
-# ================= 4. GROUND PHOTO ENGINE =================
+# ================= 4. GROUND PHOTO ACQUISITION ENGINE =================
 def _validate_image(raw_bytes, target_w, target_h):
     img = Image.open(BytesIO(raw_bytes)).convert("RGB")
     w, h = img.size
@@ -137,7 +146,7 @@ def _fetch_article_og_image(url):
             m = re.search(r'<meta[^>]+(?:og:image|twitter:image)[^>]+content=["\'](https?://[^"\']+)["\']', r.text, re.IGNORECASE)
             if m:
                 u = m.group(1)
-                if "1x1" not in u and "logo" not in u.lower():
+                if not any(k in u.lower() for k in ["google", "gstatic", "1x1", "pixel", "favicon", "avatar"]):
                     ir = requests.get(u, headers=HEADERS, timeout=6)
                     if ir.status_code == 200 and len(ir.content) > 12000: return ir.content
     except Exception: pass
@@ -164,9 +173,10 @@ def _fetch_ground_news_photo(keywords, target_w, target_h):
 
 def _fetch_pollinations_image(prompt, target_w, target_h):
     try:
-        clean = urllib.parse.quote(re.sub(r"[^\w\s,.-]", " ", prompt or "News photojournalism")[:180] + ", editorial news photo, 8k, no text")
+        clean = re.sub(r"[^\w\s]", " ", prompt or "India National News").strip()[:100]
+        query = urllib.parse.quote(f"{clean}, editorial photojournalism, cinematic natural lighting, ultra realistic 8k, no text, no speech bubbles, no watermark")
         seed = random.randint(1000, 999999)
-        r = requests.get(f"https://image.pollinations.ai/prompt/{clean}?width={768}&height={768}&seed={seed}&model=turbo&nologo=true", headers=HEADERS, timeout=8)
+        r = requests.get(f"https://image.pollinations.ai/prompt/{query}?width={768}&height={768}&seed={seed}&model=turbo&nologo=true", headers=HEADERS, timeout=8)
         if r.status_code == 200 and len(r.content) > 12000: return _validate_image(r.content, target_w, target_h)
     except Exception: pass
     return None
@@ -238,21 +248,23 @@ def download_scene_image(output_path, prompt="", rss_url="", rss_image_url="", a
     rss_url = rss_url or rss_image_url or ""
 
     base = None
-    if rss_url and rss_url.startswith("http"):
+    if rss_url and rss_url.startswith("http") and not any(k in rss_url.lower() for k in ["google", "gstatic", "1x1", "pixel"]):
         try:
             r = requests.get(rss_url, headers=HEADERS, timeout=6)
             if r.status_code == 200 and len(r.content) > 12000: base = _validate_image(r.content, tw, th)
         except Exception: pass
+
     if base is None and article_url:
         art = _fetch_article_og_image(article_url)
         if art:
             try: base = _validate_image(art, tw, th)
             except Exception: pass
+
     if base is None: base = _fetch_ground_news_photo(headline or prompt, tw, th)
     if base is None: base = _fetch_pollinations_image(prompt or headline, tw, th)
     return create_broadcast_story_card(output_path, target_w=tw, target_h=th, headline=headline, counter=counter, category=category, location=location, bulletin=bulletin, base_img=base, is_short=is_short)
 
-# ================= 5. REAL STUDIO ANCHOR VIDEO =================
+# ================= 5. REAL STUDIO ANCHOR VIDEO ENGINE =================
 class RealStudioAnchor:
     def __init__(self, video_path, target_w=760, target_h=900):
         self.w, self.h, self.frames = target_w, target_h, []
@@ -272,12 +284,12 @@ class RealStudioAnchor:
     @property
     def total(self): return len(self.frames)
 
-    def get_frame(self, frame_idx, viseme=0.5):
+    def get_frame(self, frame_idx, is_speaking=True):
         if not self.frames:
             img = Image.new("RGB", (self.w, self.h), (18, 28, 64))
-            draw_text(ImageDraw.Draw(img), (self.w // 2 - 120, self.h // 2), "🔴 LIVE STUDIO", size=36, fill=(255, 215, 0))
+            draw_text(ImageDraw.Draw(img), (self.w // 2 - 120, self.h // 2), f"🔴 {CHANNEL_NAME}", size=36, fill=(255, 215, 0))
             return img
-        return self.frames[(frame_idx + int(viseme * 10)) % len(self.frames)]
+        return self.frames[frame_idx % len(self.frames)]
 
 def find_real_anchor_video(gender="female"):
     for c in [f"assets/anchor_real_{gender}.mp4", f"assets/anchor_{gender}.mp4", f"anchor_real_{gender}.mp4", f"anchor_{gender}.mp4"]:
@@ -289,10 +301,15 @@ def _extract_rss_image(item):
     for elem in item.iter():
         if elem.tag.lower().endswith(("content", "thumbnail", "enclosure")):
             u = elem.attrib.get("url") or elem.attrib.get("href")
-            if u and u.startswith("http") and not u.endswith(".mp3"): return u
+            if u and u.startswith("http") and not u.endswith(".mp3"):
+                if not any(k in u.lower() for k in ["google", "gstatic", "1x1", "pixel"]):
+                    return u
     for child in item:
         m = re.search(r'<img[^>]+src=[\'"](https?://[^\'"]+)[\'"]', child.text or "", re.IGNORECASE)
-        if m: return m.group(1)
+        if m:
+            u = m.group(1)
+            if not any(k in u.lower() for k in ["google", "gstatic", "1x1", "pixel"]):
+                return u
     return ""
 
 def fetch_trending_news(category="NATION", max_items=100):
@@ -331,13 +348,13 @@ def fetch_trending_news(category="NATION", max_items=100):
         ]
     return headlines[:max_items]
 
-# ================= 7. SOUND DESIGN & MASTERING =================
+# ================= 7. SOUND DESIGN & VOICE SYNTHESIS =================
 def synthesize_broadcast_voice(text, output_path, gender="female"):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     voice = "hi-IN-SwaraNeural" if gender == "female" else "hi-IN-MadhurNeural"
     try:
         import edge_tts
-        asyncio.run(edge_tts.Communicate(text=text, voice=voice, rate="+3%").save(output_path))
+        asyncio.run(edge_tts.Communicate(text=text, voice=voice, rate="-2%").save(output_path))
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1000: return output_path
     except Exception: pass
     try:
@@ -397,6 +414,13 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list, merged_voice], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     bgm_path = generate_pro_broadcast_bed(_get_audio_duration(merged_voice))
 
+    logo_img = None
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo_raw = Image.open(LOGO_PATH).convert("RGBA")
+            logo_img = logo_raw.resize((240, 240) if is_short else (180, 180), Image.Resampling.LANCZOS)
+        except Exception: pass
+
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
         "-i", merged_voice, "-i", bgm_path,
@@ -406,7 +430,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     ]
     proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
     global_frame = 0
-    ticker_text = f"  ★★★  {CHANNEL_NAME} LIVE  ★★★  " + "  |  ".join([sc["headline"] for sc in scene_assets]) + "  ★★★  "
+    ticker_text = f"  ★★★  {CHANNEL_NAME} LIVE  ★★★  {TAGLINE}  ★★★  " + "  |  ".join([sc["headline"] for sc in scene_assets]) + "  ★★★  "
 
     for sc in scene_assets:
         n_frames = max(1, int(round(sc["duration"] * fps)))
@@ -415,23 +439,28 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
 
         for f_i in range(n_frames):
             frame_img = Image.new("RGB", (W, H), (10, 16, 36))
-            anc_frame = anchor_engine.get_frame(global_frame, float(env[min(f_i, len(env) - 1)])) if anchor_engine else None
+            anc_frame = anchor_engine.get_frame(global_frame, is_speaking=True) if anchor_engine else None
 
             if is_short:
                 frame_img.paste(story_card, (0, 0))
                 div_bar = Image.new("RGB", (W, 90), (195, 16, 32))
-                draw_text(ImageDraw.Draw(div_bar), (24, 24), f"🔴 {CHANNEL_NAME}  |  BREAKING NEWS SUPERFAST", size=32, fill=(255, 255, 255))
+                draw_text(ImageDraw.Draw(div_bar), (24, 24), f"🔴 {CHANNEL_NAME}  |  {TAGLINE_HI}", size=30, fill=(255, 255, 255))
                 frame_img.paste(div_bar, (0, 840))
                 if anc_frame: frame_img.paste(anc_frame, (0, 934))
+                if logo_img:
+                    frame_img.paste(logo_img, (W - 260, 20), logo_img)
             else:
                 hdr = Image.new("RGB", (W, 70), (12, 22, 54))
                 h_draw = ImageDraw.Draw(hdr)
-                draw_text(h_draw, (30, 16), f"🔴 {CHANNEL_NAME} LIVE  |  24/7 AUTONOMOUS NEWS NETWORK", size=26, fill=(255, 215, 0))
+                draw_text(h_draw, (30, 16), f"🔴 {CHANNEL_NAME} LIVE  |  {TAGLINE}", size=26, fill=(255, 215, 0))
                 draw_text(h_draw, (W - 200, 16), (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S IST"), size=24, fill=(255, 255, 255))
                 frame_img.paste(hdr, (0, 0))
 
                 if anc_frame: frame_img.paste(anc_frame, (20, 90))
                 frame_img.paste(story_card.resize((1100, 740), Image.Resampling.LANCZOS), (790, 110))
+
+                if logo_img:
+                    frame_img.paste(logo_img, (30, H - 280), logo_img)
 
                 tick_bar = Image.new("RGB", (W, 76), (185, 14, 28))
                 t_draw = ImageDraw.Draw(tick_bar)
@@ -448,7 +477,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     logger.info(f"🎬 Video complete: {output_path} ({os.path.getsize(output_path)/(1024*1024):.2f} MB)")
     return output_path
 
-# ================= 9. THUMBNAIL & YOUTUBE =================
+# ================= 9. THUMBNAIL & YOUTUBE ENGINE =================
 def generate_broadcast_thumbnail(headline, photo_path, output_path, gender="female"):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     TW, TH = 1280, 720
@@ -469,9 +498,15 @@ def generate_broadcast_thumbnail(headline, photo_path, output_path, gender="fema
             if anc.total > 0: base.paste(anc.get_frame(12), (0, 0))
         except Exception: pass
 
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo_raw = Image.open(LOGO_PATH).convert("RGBA").resize((160, 160), Image.Resampling.LANCZOS)
+            base.paste(logo_raw, (TW - 190, 24), logo_raw)
+        except Exception: pass
+
     draw.rectangle([0, 0, TW - 1, TH - 1], outline=(220, 20, 36), width=6)
     draw.rectangle([6, 6, TW - 7, TH - 7], outline=(255, 215, 0), width=2)
-    draw.rounded_rectangle([30, 24, 380, 76], radius=8, fill=(210, 16, 30), outline=(255, 215, 0), width=2)
+    draw.rounded_rectangle([30, 24, 400, 76], radius=8, fill=(210, 16, 30), outline=(255, 215, 0), width=2)
     draw_text(draw, (44, 30), f"🔴 {CHANNEL_NAME}  |  LIVE", size=32, fill=(255, 255, 255))
 
     draw.rectangle([20, TH - 220, TW - 20, TH - 24], fill=(8, 14, 28))
@@ -512,7 +547,7 @@ def sync_youtube_analytics():
                 st = items[0].get("statistics", {})
                 up_id = items[0].get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads")
                 adata["channel_stats"] = {"subscribers": int(st.get("subscriberCount", 0)), "total_views": int(st.get("viewCount", 0)), "video_count": int(st.get("videoCount", 0))}
-                logger.info(f"📊 LIVE YOUTUBE: Subs: {adata['channel_stats']['subscribers']:,} | Views: {adata['channel_stats']['total_views']:,}")
+                logger.info(f"📊 LIVE YOUTUBE ({CHANNEL_NAME}): Subs: {adata['channel_stats']['subscribers']:,} | Views: {adata['channel_stats']['total_views']:,}")
                 if up_id:
                     pr = requests.get("https://www.googleapis.com/youtube/v3/playlistItems", params={"part": "contentDetails", "playlistId": up_id, "maxResults": "25"}, headers=h, timeout=15)
                     if pr.status_code == 200:
@@ -569,17 +604,82 @@ def produce_news_episode(category="AUTO", is_short=True, edition="auto", anchor_
     cfg = EDITION_CONFIGS.get(ed, EDITION_CONFIGS["MORNING"])
     headlines = fetch_trending_news(category=("NATION" if category == "AUTO" else category), max_items=(5 if is_short else cfg["target_count"]))
     gender = anchor_gender or ("female" if random.random() < 0.5 else "male")
-    script = {"title": f"🔴 5 बड़ी ख़बरें! Top News Headlines #Shorts" if is_short else f"{cfg['title_prefix']} | {cfg['bulletin_label']}", "anchor_gender": gender}
+    script = {"title": f"🔴 5 बड़ी ख़बरें! Top News Headlines #Shorts" if is_short else f"{cfg['title_prefix']} | {CHANNEL_NAME}", "anchor_gender": gender}
 
     assets, lead_photo = [], None
+
+    # ===== DEDICATED INTRO SCENE FOR LONG BULLETINS =====
+    if not is_short:
+        intro_img = "temp/scene_intro.jpg"
+        intro_aud = "temp/voice_intro.mp3"
+        create_broadcast_story_card(
+            intro_img,
+            headline=f"{cfg['title_prefix']} | {CHANNEL_NAME}",
+            counter="LIVE INTRO",
+            category="विशेष बुलेटिन",
+            location="स्टूडियो हेडक्वार्टर",
+            bulletin=cfg["bulletin_label"],
+            is_short=False,
+        )
+        intro_narration = (
+            f"नमस्कार! आप देख रहे हैं {CHANNEL_NAME_HI}—{TAGLINE}। "
+            f"आज के इस विशेष महाबुलेटिन में हम लेकर आए हैं देश, दुनिया और टेक्नोलॉजी की तमाम बड़ी व महत्वपूर्ण खबरें। "
+            f"आइए बिना किसी देरी के सीधे रुख करते हैं आज के इस बुलेटिन की..."
+        )
+        synthesize_broadcast_voice(intro_narration, intro_aud, gender=gender)
+        assets.append({
+            "scene_id": 0, "image_path": intro_img, "audio_path": intro_aud,
+            "headline": f"विशेष बुलेटिन: {CHANNEL_NAME_HI}", "duration": _get_audio_duration(intro_aud),
+        })
+
+    # ===== MAIN STORIES WITH NATURAL TV RUNDOWN TRANSITIONS =====
+    intro_prefixes = [
+        "पहली बड़ी खबर।",
+        "अगली महत्वपूर्ण सुर्खी।",
+        "तीसरा बड़ा घटनाक्रम।",
+        "चौथी बड़ी खबर पर नजर डालें तो,",
+        "और पांचवीं प्रमुख सुर्खी।"
+    ]
+
     for idx, h in enumerate(headlines):
         sid = idx + 1
         img_p, aud_p = f"temp/scene_{sid}.jpg", f"temp/voice_{sid}.mp3"
         counter = f"ख़बर {sid} / {len(headlines)}" if not is_short else f"ख़बर {sid}"
         download_scene_image(img_p, prompt=h["title"], rss_url=h.get("media_url", ""), article_url=h.get("article_url", ""), headline=h["title"], counter=counter, category=h.get("category_tag", "राष्ट्रीय"), location=h.get("location_tag", "नई दिल्ली"), bulletin=cfg["bulletin_label"], is_short=is_short)
         if idx == 0 and os.path.exists(img_p): lead_photo = img_p
-        synthesize_broadcast_voice(f"{h['title']}। {CHANNEL_NAME} पर इस बड़ी खबर की हर अपडेट हम आप तक पहुंचा रहे हैं।", aud_p, gender=gender)
+
+        prefix = intro_prefixes[idx % len(intro_prefixes)]
+        if is_short and idx == len(headlines) - 1:
+            narration = f"{prefix} {h['title']}। देश और दुनिया की तमाम बड़ी खबरों के लिए सब्सक्राइब करें {CHANNEL_NAME_HI}।"
+        else:
+            narration = f"{prefix} {h['title']}।"
+
+        synthesize_broadcast_voice(narration, aud_p, gender=gender)
         assets.append({"scene_id": sid, "image_path": img_p, "audio_path": aud_p, "headline": h["title"], "duration": _get_audio_duration(aud_p)})
+
+    # ===== DEDICATED OUTRO SCENE FOR LONG BULLETINS =====
+    if not is_short:
+        outro_img = "temp/scene_outro.jpg"
+        outro_aud = "temp/voice_outro.mp3"
+        create_broadcast_story_card(
+            outro_img,
+            headline="सब्सक्राइब करें नेक्सोरा न्यूज़ | Bell Icon दबाएं",
+            counter="LIVE OUTRO",
+            category="चैनल अपडेट",
+            location="स्टूडियो हेडक्वार्टर",
+            bulletin="SUBSCRIBE NOW",
+            is_short=False,
+        )
+        outro_narration = (
+            f"तो ये थीं आज की तमाम बड़ी और अहम खबरें। "
+            f"देश, दुनिया और टेक्नोलॉजी जगत के हर बड़े घटनाक्रम की सबसे तेज़ और सटीक कवरेज के लिए '{CHANNEL_NAME_HI}' को अभी सब्सक्राइब करें और बेल आइकन दबाना न भूलें। "
+            f"देखते रहिए {CHANNEL_NAME_HI}—{TAGLINE_HI}। नमस्कार!"
+        )
+        synthesize_broadcast_voice(outro_narration, outro_aud, gender=gender)
+        assets.append({
+            "scene_id": len(headlines) + 1, "image_path": outro_img, "audio_path": outro_aud,
+            "headline": f"सब्सक्राइब करें {CHANNEL_NAME_HI}", "duration": _get_audio_duration(outro_aud),
+        })
 
     out = "final_short.mp4" if is_short else "final_long.mp4"
     build_news_video(script, assets, out, is_short=is_short)
@@ -587,8 +687,20 @@ def produce_news_episode(category="AUTO", is_short=True, edition="auto", anchor_
     if not is_short: generate_broadcast_thumbnail(headlines[0]["title"] if headlines else "आज की बड़ी खबरें", lead_photo, thumb, gender=gender)
 
     if not skip_upload:
-        desc = f"{script['title']}\n\n📺 {CHANNEL_NAME} LIVE BROADCAST: देश और दुनिया की सभी बड़ी खबरें सीधे हमारे 24/7 न्यूज़ रूम से।\n\n📌 आज की प्रमुख खबरें:\n" + "\n".join([f"{i+1}. {sc['headline']}" for i, sc in enumerate(assets[:15])]) + "\n\n🔔 चैनल को Subscribe करें और Bell Icon दबाएं!"
-        upload_to_youtube(out, script["title"], desc, [CHANNEL_NAME, "Hindi News", "Breaking News", "Superfast News"], thumb_path=thumb, is_short=is_short)
+        desc = (
+            f"{script['title']}\n\n"
+            f"📺 {CHANNEL_NAME} ({CHANNEL_NAME_HI})\n"
+            f"⚡ {TAGLINE}\n"
+            f"📌 {TAGLINE_HI}\n\n"
+            f"Channel Identity:\n"
+            f"• Category: National, International & Technology\n"
+            f"• Format: AI News Network\n"
+            f"• Language: Hindi + English\n\n"
+            f"आज के बुलेटिन की प्रमुख खबरें:\n"
+            + "\n".join([f"{i+1}. {sc['headline']}" for i, sc in enumerate(assets[:15])])
+            + f"\n\n🔔 निष्पक्ष और सटीक खबरों के लिए चैनल को Subscribe करें और Bell Icon दबाएं!"
+        )
+        upload_to_youtube(out, script["title"], desc, [CHANNEL_NAME, CHANNEL_NAME_HI, "Nexora News Live", "Hindi News", "Breaking News", "Technology News", "Superfast News"], thumb_path=thumb, is_short=is_short)
     return out
 
 def main():
