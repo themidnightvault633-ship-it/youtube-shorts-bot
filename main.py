@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""
-24/7 Autonomous AI TV News Network Engine
-Official Channel: NEXORA NEWS (नेक्सोरा न्यूज़)
-Tagline: THE WORLD. THE NEXT. THE NEWS. (सही खबर | तेज़ नज़र | बेहतर कल)
-Category: National, International & Technology | AI News Network
-Features:
-- Complete & Clear News Briefing: Headline + Factual Context (Zero Incomplete/Cut-off News)
-- Paced News Rundown: 0.6s Breathing Pauses Between Stories + 1.5s Outro Safety Padding
-- Comprehensive Entity-Mapped Ground Photo Engine (Zero Gandhi Posters / 1800s Scans)
-- Anti-Anime Photojournalism Filter (Guarantees authentic news photos, zero cartoon speech bubbles)
-- Bilingual Mixed Typography Engine: Seamless English (NEXORA NEWS, INS, DRDO) + Hindi rendering
-- Dedicated Studio Intro & Outro for Long Videos (Opening Hook + Closing CTA)
-- Real Anchor Video Engine (Smooth 1x Playback, Zero Watermark, Zero Jitter)
-- 3-Tier Broadcast Aston (Location Kicker, Glassmorphic Strap, Live Counter)
-- Sound Design: 120-BPM Newsroom Pulse Bed + EBU R128 (-14 LUFS) Mastering
-- High-CTR Clickable 1280x720 Thumbnail Generator & API Uploader
-- YouTube Audience Analytics Feedback Loop (Auto-Prioritizes Winning Topics)
-"""
-
 import os, sys, re, glob, json, time, math, random, asyncio, logging, argparse, subprocess, urllib.parse, wave
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -26,7 +7,7 @@ import requests, numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", handlers=[logging.StreamHandler(sys.stdout)])
-logger = logging.getLogger("NexoraNews")
+logger = logging.getLogger("NexoraWorld")
 
 # ================= 1. BRANDING & CREDENTIALS =================
 def _clean(v): return (v or "").strip().strip('"').strip("'").strip()
@@ -36,147 +17,123 @@ YT_CLIENT_SECRET = _clean(os.environ.get("YT_CLIENT_SECRET", ""))
 YT_REFRESH_TOKEN = _clean(os.environ.get("YT_REFRESH_TOKEN", ""))
 
 CHANNEL_NAME = "NEXORA NEWS"
-CHANNEL_NAME_HI = "नेक्सोरा न्यूज़"
 TAGLINE = "THE WORLD. THE NEXT. THE NEWS."
-TAGLINE_HI = "सही खबर | तेज़ नज़र | बेहतर कल"
+SUB_TAGLINE = "GLOBAL COVERAGE | INDEPENDENT | VERIFIED"
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
 TOPIC_ANALYTICS_FILE = os.path.join("assets", "topic_analytics.json")
 LOGO_PATH = os.path.join("assets", "channel_logo.png")
 
-TOPIC_TAXONOMY = {
-    "DEFENSE_SECURITY": ["सेना", "बॉर्डर", "मिसाइल", "चीन", "पाकिस्तान", "युद्ध", "राफेल", "drdo", "आर्मी", "नेवी", "एयरफोर्स", "हमला", "सुरक्षा", "सैनिक", "defence"],
-    "CRIME_LAW": ["पुलिस", "कोर्ट", "सीबीआई", "सुप्रीम कोर्ट", "गिरफ्तार", "एनकाउंटर", "जेल", "ईडी", "fir", "जांच", "हत्या", "हादसा", "कस्टडी", "मुठभेड़"],
-    "POLITICS": ["मोदी", "संसद", "सरकार", "राहुल", "मंत्री", "cm", "bjp", "congress", "चुनाव", "पार्टी", "विपक्ष", "नेता", "कैबिनेट", "लोकसभा", "राज्यसभा"],
-    "WORLD_GEOPOLITICS": ["अमेरिका", "ट्रंप", "रूस", "ईरान", "इजरायल", "गाजा", "संयुक्त राष्ट्र", "ग्लोबल", "विदेश", "यूक्रेन", "हूती", "पुतिन"],
-    "SCIENCE_TECH": ["इसरो", "नासा", "अंतरिक्ष", "उपग्रह", "गगनयान", "चंद्रयान", "ai", "रोबोट", "5g", "स्मार्टफोन", "सेमीकंडक्टर", "tech"],
-    "ECONOMY_FINANCE": ["शेयर बाजार", "सेंसेक्स", "बजट", "टैक्स", "बैंक", "सोना", "आरबीआई", "महंगाई", "लोन", "जीडीपी", "रुपया", "कारोबार"],
+GLOBAL_TOPICS = {
+    "GEOPOLITICS": ["united nations", "white house", "biden", "trump", "putin", "kremlin", "nato", "eu", "diplomacy", "summit", "treaty", "sanctions", "china", "taiwan"],
+    "DEFENSE_SECURITY": ["military", "pentagon", "defense", "missile", "navy", "warship", "fighter jet", "aircraft carrier", "army", "conflict", "air force", "security"],
+    "GLOBAL_ECONOMY": ["federal reserve", "central bank", "inflation", "oil", "trade", "tariffs", "wall street", "stock market", "imf", "world bank", "dollar", "gdp"],
+    "WORLD_TECH_AI": ["artificial intelligence", "nasa", "spacex", "satellite", "semiconductor", "chip", "quantum", "cyber", "robotics", "tech", "data center"],
+    "CLIMATE_CRISIS": ["climate", "summit", "green energy", "cop", "wildfire", "hurricane", "renewable", "earthquake", "environment"]
 }
 
-# Comprehensive Bilingual Entity Mapping for Press Photography (Eliminates Anime & Gandhi Poster Fallback)
-ENTITY_MAP = [
-    (["हेलीकॉप्टर", "क्रैश", "विमान", "हादसा", "दुर्घटना", "बद्रीनाथ", "केदारनाथ", "उत्तराखंड", "crash", "helicopter"], "Rescue helicopter crash site mountain Himalayas Uttarakhand emergency"),
-    (["राफेल", "विक्रांत", "नेवी", "नौसेना", "विमानवाहक", "लड़ाकू", "rafale", "navy", "vikrant"], "INS Vikrant aircraft carrier Indian Navy fighter jet landing at sea"),
-    (["सेना", "आर्मी", "जवान", "बॉर्डर", "एलएसी", "एलओसी", "drdo", "मिसाइल", "डिफेंस", "army", "defence"], "Indian Army soldiers border security patrol combat uniform"),
-    (["india bloc", "विपक्ष", "गठबंधन", "खरगे", "महाभियोग", "kharge", "opposition", "संसद", "parliament"], "Indian Parliament Opposition leaders press conference New Delhi"),
-    (["राहुल", "गांधी", "कांग्रेस", "rahul gandhi", "congress", "प्रियंका", "सोनिया"], "Rahul Gandhi politician press conference New Delhi India"),
-    (["मोदी", "प्रधानमंत्री", "पीएम", "केबिनेट", "narendra modi", "pm modi", "bjp", "भाजपा"], "Narendra Modi Prime Minister of India official address New Delhi"),
-    (["जनगणना", "जाति", "census", "caste census", "सर्वे", "चुनाव", "चुनावी", "मतदान", "election", "vote"], "Election Commission of India polling press briefing New Delhi"),
-    (["isro", "इसरो", "गगनयान", "अंतरिक्ष", "रॉकेट", "उपग्रह", "सैटेलाइट", "gslv", "pslv", "चंद्रयान", "space", "satellite", "rocket"], "ISRO rocket launch satellite Sriharikota space port India"),
-    (["ai", "टेक्नोलॉजी", "टेक", "स्मार्टफोन", "5g", "रोबोट", "गूगल", "apple"], "Technology artificial intelligence computer data center futuristic"),
-    (["वंदे भारत", "ट्रेन", "रेलवे", "स्लीपर", "स्टेशन", "रेल", "vande bharat", "railway", "train"], "Vande Bharat Express modern train Indian Railways station"),
-    (["मौसम", "बारिश", "बाढ़", "चक्रवात", "तूफान", "अलर्ट", "मॉनसून", "weather", "rain", "flood", "storm"], "Heavy monsoon rainfall waterlogged street rescue operations India"),
-    (["ग्लेशियर", "झील", "पहाड़", "हिमालय", "भूटान", "glacier", "mountain"], "Himalayan glacier mountain lake disaster flash flood"),
-    (["सुप्रीम कोर्ट", "अदालत", "हाईकोर्ट", "जज", "न्यायाधीश", "cbi", "सीबीआई", "ईडी", "ed", "supreme court", "court"], "Supreme Court of India building New Delhi justice"),
-    (["पुलिस", "गिरफ्तार", "एनकाउंटर", "हादसा", "कस्टडी", "क्राइम", "fir", "police", "arrest"], "Indian Police barricade emergency vehicle night patrol"),
-    (["शेयर", "सेंसेक्स", "बाजार", "अर्थव्यवस्था", "सोना", "निफ्टी", "टैक्स", "बजट", "bank", "stock", "market"], "Bombay Stock Exchange building Mumbai stock market trading"),
-    (["चिकन", "मटन", "मछली", "खाना", "डिश", "फूड", "meat", "food"], "Indian food culinary fresh traditional market dish"),
-    (["दिवाली", "छठ", "त्योहार", "पूजा", "diwali", "festival"], "Diwali festival celebration lights oil lamps India"),
+ENTITY_MAP_INTL = [
+    (["white house", "president", "biden", "trump", "washington", "congress", "capitol"], "White House Washington DC press briefing President United States"),
+    (["united nations", "un security council", "un general assembly", "geneva", "guterres"], "United Nations Security Council chamber Geneva New York diplomacy"),
+    (["nato", "pentagon", "defense secretary", "allies", "brussels"], "NATO headquarters summit Brussels defense ministers alliance meeting"),
+    (["aircraft carrier", "navy", "warship", "fighter jet", "stealth bomber", "air force"], "Modern aircraft carrier warship operations at sea military fighter jet launch"),
+    (["space", "nasa", "spacex", "rocket", "launch", "satellite", "astronaut", "moon", "mars"], "NASA rocket launch Cape Canaveral space exploration satellite deployment"),
+    (["kremlin", "russia", "putin", "moscow", "ukraine"], "Kremlin Red Square Moscow official government architecture"),
+    (["china", "beijing", "xi jinping", "taiwan", "south china sea"], "Great Hall of the People Beijing China official international diplomacy"),
+    (["artificial intelligence", "ai", "supercomputer", "chips", "semiconductor", "nvidia"], "Advanced artificial intelligence high tech data center server architecture"),
+    (["wall street", "stock exchange", "economy", "federal reserve", "central bank", "treasury"], "New York Stock Exchange Wall Street financial trading floor"),
+    (["europe", "european union", "brussels", "london", "downing street", "parliament"], "Palace of Westminster UK Parliament London Downing Street"),
+    (["middle east", "israel", "gaza", "iran", "red sea", "diplomacy"], "Middle East diplomatic negotiations peace summit regional security"),
+    (["climate", "renewable", "solar", "wind", "electric", "environment"], "Renewable energy wind turbines solar farm modern climate technology")
 ]
 
 def map_headline_to_search_query(headline):
     hl = (headline or "").lower()
-    for keywords, query in ENTITY_MAP:
+    for keywords, query in ENTITY_MAP_INTL:
         if any(kw in hl for kw in keywords):
             return query
-    return None
+    return "International diplomatic press conference global news report"
 
-# Prioritizing news feeds that provide DIRECT ground press photo attachments
-NEWS_FEEDS = {
-    "NATION": [
-        "https://www.amarujala.com/rss/breaking-news.xml",
-        "https://ndtv.in/rss/top-stories",
-        "https://feeds.bbci.co.uk/hindi/rss.xml",
-        "https://news.google.com/rss/headlines/section/topic/NATION?hl=hi&gl=IN&ceid=IN:hi",
-    ],
-    "TECHNOLOGY": [
-        "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=hi&gl=IN&ceid=IN:hi",
-        "https://feeds.bbci.co.uk/hindi/rss.xml",
-    ],
+NEWS_FEEDS_INTL = {
     "WORLD": [
         "https://feeds.bbci.co.uk/news/world/rss.xml",
-        "https://feeds.feedburner.com/ndtvnews-world-news",
-        "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-IN&gl=IN&ceid=IN:en",
+        "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
+        "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+        "https://feeds.aljazeera.net/xml/rss/all.xml",
     ],
+    "TECHNOLOGY": [
+        "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
+        "https://feeds.bbci.co.uk/news/technology/rss.xml",
+    ],
+    "DEFENSE": [
+        "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
+        "https://feeds.bbci.co.uk/news/world/rss.xml",
+    ]
 }
 
 EDITION_CONFIGS = {
-    "MORNING": {"target_count": 10, "title_prefix": "🔴 LIVE सुबह महाबुलेटिन: Top 10 बड़ी खबरें", "counter_prefix": "ख़बर", "bulletin_label": "TOP 10 NEWS"},
-    "AFTERNOON": {"target_count": 8, "title_prefix": "🔴 LIVE दोपहर बुलेटिन: आज की बड़ी ख़बरें", "counter_prefix": "बड़ी ख़बर", "bulletin_label": "SPECIAL BULLETIN"},
-    "EVENING": {"target_count": 10, "title_prefix": "🔴 LIVE शाम बुलेटिन: Top 10 Superfast News", "counter_prefix": "ख़बर", "bulletin_label": "TOP 10 NEWS"},
+    "MORNING": {"target_count": 8, "title_prefix": "🔴 LIVE Morning Global Briefing: Top 8 World News", "bulletin_label": "GLOBAL BRIEFING"},
+    "AFTERNOON": {"target_count": 8, "title_prefix": "🔴 LIVE Global In-Depth: Top World Developments", "bulletin_label": "WORLD IN-DEPTH"},
+    "EVENING": {"target_count": 8, "title_prefix": "🔴 LIVE Prime Time World Bulletin: Top 8 Stories", "bulletin_label": "PRIME TIME WORLD"},
 }
 
 def get_current_edition():
     try:
-        h = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).hour
-        return "MORNING" if 5 <= h < 12 else ("AFTERNOON" if 12 <= h < 17 else "EVENING")
-    except Exception:
-        return "MORNING"
+        h = datetime.now(timezone.utc).hour
+        return "MORNING" if 4 <= h < 12 else ("AFTERNOON" if 12 <= h < 18 else "EVENING")
+    except Exception: return "MORNING"
 
-# ================= 2. TYPOGRAPHY ENGINE (ZERO TOFU BOXES) =================
-def _get_english_font(size=28):
-    for p in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"]:
+# ================= 2. TYPOGRAPHY & TEXT ENGINE =================
+def _get_font(size=28, bold=True):
+    paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
+    ]
+    for p in paths:
         if os.path.exists(p):
             try: return ImageFont.truetype(p, size)
             except Exception: pass
     return ImageFont.load_default()
 
-def _get_devanagari_font(size=28):
-    for p in ["assets/fonts/NotoSansDevanagari-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf", "assets/fonts/NotoSansDevanagari-Regular.ttf"]:
-        if os.path.exists(p):
-            try: return ImageFont.truetype(p, size)
-            except Exception: pass
-    return _get_english_font(size)
+def wrap_text_to_width(draw, text, font, max_w, max_lines=2):
+    words = (text or "").split()
+    lines, cur = [], []
+    for w in words:
+        test = " ".join(cur + [w])
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if (bbox[2] - bbox[0]) <= max_w:
+            cur.append(w)
+        else:
+            if cur: lines.append(" ".join(cur))
+            cur = [w]
+    if cur: lines.append(" ".join(cur))
+    return lines[:max_lines]
 
-def draw_mixed_line(draw, pos, text, size=28, fill=(255, 255, 255)):
-    x, y = pos
-    dev_f, eng_f = _get_devanagari_font(size), _get_english_font(size)
-    clean_t = (text or "").replace("🔴", "  ")
-    tokens = re.findall(r'[\u0900-\u097F]+|[^\u0900-\u097F]+', clean_t)
-    for tok in tokens:
-        is_hindi = any('\u0900' <= ch <= '\u097F' for ch in tok)
-        f = dev_f if is_hindi else eng_f
-        draw.text((x, y), tok, font=f, fill=fill)
-        bbox = draw.textbbox((x, y), tok, font=f)
-        x = bbox[2]
-    return x
-
-def measure_text(draw, text, size=28):
-    dev_f, eng_f = _get_devanagari_font(size), _get_english_font(size)
-    clean_t = (text or "").replace("🔴", "  ")
-    tokens = re.findall(r'[\u0900-\u097F]+|[^\u0900-\u097F]+', clean_t)
-    tw = 0
-    for tok in tokens:
-        is_hindi = any('\u0900' <= ch <= '\u097F' for ch in tok)
-        bbox = draw.textbbox((0, 0), tok, font=(dev_f if is_hindi else eng_f))
-        tw += (bbox[2] - bbox[0])
-    return tw
-
-# ================= 3. TOPIC ANALYTICS & REINFORCEMENT =================
+# ================= 3. TOPIC ANALYTICS FEEDBACK LOOP =================
 def classify_headline_topic(headline):
     hl = (headline or "").lower()
-    for cat, kws in TOPIC_TAXONOMY.items():
-        if any(kw in hl for kw in kws):
-            return cat
-    return "NATIONAL_GENERAL"
+    for cat, kws in GLOBAL_TOPICS.items():
+        if any(kw in hl for kw in kws): return cat
+    return "GLOBAL_AFFAIRS"
 
 def load_topic_analytics():
     if os.path.exists(TOPIC_ANALYTICS_FILE):
         try: return json.load(open(TOPIC_ANALYTICS_FILE, "r", encoding="utf-8"))
         except Exception: pass
-    return {"version": "2.0", "channel_name": CHANNEL_NAME, "recommended_topic": "DEFENSE_SECURITY", "topic_performance": {}}
+    return {"version": "3.0", "channel_name": CHANNEL_NAME, "recommended_topic": "GEOPOLITICS", "topic_performance": {}}
 
 def save_topic_analytics(data):
     try:
         os.makedirs("assets", exist_ok=True)
-        json.dump(data, open(TOPIC_ANALYTICS_FILE, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+        json.dump(data, open(TOPIC_ANALYTICS_FILE, "w", encoding="utf-8"), indent=2)
     except Exception as e: logger.warning(f"Could not save analytics: {e}")
 
 def get_recommended_topic():
     adata = load_topic_analytics()
-    return adata.get("recommended_topic", "DEFENSE_SECURITY")
+    return adata.get("recommended_topic", "GEOPOLITICS")
 
-# ================= 4. GROUND PHOTO ENGINE (AUTHENTIC EDITORIAL) =================
+# ================= 4. GROUND PHOTO ENGINE (GLOBAL PHOTOJOURNALISM) =================
 def _validate_image(raw_bytes, target_w, target_h):
     img = Image.open(BytesIO(raw_bytes)).convert("RGB")
     w, h = img.size
@@ -196,7 +153,7 @@ def _fetch_article_og_image(url):
     try:
         r = requests.get(url, headers=HEADERS, timeout=4, allow_redirects=True)
         if r.status_code == 200:
-            m = re.search(r'<meta[^>]+(?:og:image|twitter:image)[^>]+content=["\'](https?://[^"\']+)["\']', r.text, re.IGNORECASE)
+            m = re.search(r'<meta[^>]+content=[\"\'](https?://[^\"\']+)[\"\']', r.text, re.IGNORECASE)
             if m:
                 u = m.group(1)
                 if not any(k in u.lower() for k in ["google", "gstatic", "1x1", "pixel", "favicon", "avatar"]):
@@ -206,14 +163,8 @@ def _fetch_article_og_image(url):
     except Exception: pass
     return None
 
-def _fetch_ground_news_photo(keywords_or_headline, target_w, target_h):
-    q = map_headline_to_search_query(keywords_or_headline)
-    if not q:
-        for cat, kws in TOPIC_TAXONOMY.items():
-            if any(k in (keywords_or_headline or "").lower() for k in kws):
-                q = f"India {cat.lower().replace('_', ' ')} news report press"
-                break
-    if not q: q = "India government press briefing New Delhi news"
+def _fetch_ground_news_photo(headline, target_w, target_h):
+    q = map_headline_to_search_query(headline)
     try:
         url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={urllib.parse.quote(q)}&gsrlimit=10&prop=imageinfo&iiprop=url|mime|size&format=json"
         res = requests.get(url, headers=HEADERS, timeout=5).json()
@@ -222,9 +173,9 @@ def _fetch_ground_news_photo(keywords_or_headline, target_w, target_h):
             info = page.get("imageinfo", [{}])[0]
             u = info.get("url", "")
             title_l = page.get("title", "").lower()
-            if any(k in title_l for k in ["gandhi", "book", "document", "scan", "archive", "drawing", "map", "flag", "1800", "1900", "1910", "1920", "1930", "1940"]):
+            if any(k in title_l for k in ["book", "document", "scan", "archive", "drawing", "map", "flag", "1800", "1900", "1920", "1940"]):
                 continue
-            if u.lower().endswith((".jpg", ".jpeg", ".png")) and info.get("width", 0) >= 500:
+            if u.lower().endswith((".jpg", ".jpeg", ".png")) and info.get("width", 0) >= 600:
                 ir = requests.get(u, headers=HEADERS, timeout=6)
                 if ir.status_code == 200: return _validate_image(ir.content, target_w, target_h)
     except Exception: pass
@@ -232,8 +183,7 @@ def _fetch_ground_news_photo(keywords_or_headline, target_w, target_h):
 
 def _fetch_pollinations_image(prompt, target_w, target_h):
     mapped_q = map_headline_to_search_query(prompt)
-    lead_subject = mapped_q if mapped_q else "Indian national news report press conference New Delhi"
-    clean_p = f"high quality real photojournalism press photography of {lead_subject}, cinematic lighting, photorealistic, raw news footage, 8k, highly detailed, realistic texture, no text, no captions, no subtitles, no anime, no cartoon, no drawing, authentic Indian news background"
+    clean_p = f"high quality real global photojournalism press photography of {mapped_q}, cinematic lighting, photorealistic, raw news footage, 8k, highly detailed realistic texture, no text, no captions, authentic international press broadcast background"
     u = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(clean_p)}?width={target_w}&height={target_h}&nologo=true&model=flux"
     try:
         r = requests.get(u, timeout=14)
@@ -242,15 +192,10 @@ def _fetch_pollinations_image(prompt, target_w, target_h):
     except Exception: pass
     return None
 
-def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headline="", headline_text="", counter="", counter_text="ख़बर 1", category="राष्ट्रीय", category_tag="राष्ट्रीय", location="नई दिल्ली", location_tag="नई दिल्ली", bulletin="LIVE", bulletin_label="LIVE", base_img=None, is_short=False, **kwargs):
+def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headline="", counter="STORY 1 OF 5", category="WORLD", location="GLOBAL DESK", bulletin="LIVE", base_img=None, is_short=False, **kwargs):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    headline = headline or headline_text or "आज की बड़ी ख़बर"
-    counter = counter or counter_text or "ख़बर"
-    category = category or category_tag or "राष्ट्रीय"
-    location = location or location_tag or "नई दिल्ली"
-    bulletin = bulletin or bulletin_label or "LIVE"
-
     card = Image.new("RGB", (target_w, target_h), (8, 14, 28))
+
     if base_img:
         try:
             resized_base = _validate_image(base_img.tobytes() if hasattr(base_img, "tobytes") else base_img, target_w, target_h)
@@ -259,17 +204,15 @@ def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headli
             try: card.paste(base_img.resize((target_w, target_h), Image.Resampling.LANCZOS), (0, 0))
             except Exception: pass
     else:
-        # Dynamic Editorial Radar Studio Backdrop
         b_draw = ImageDraw.Draw(card)
         for y in range(target_h):
             r = int(10 + (y / target_h) * 16)
             g = int(18 + (y / target_h) * 22)
-            b = int(42 + (y / target_h) * 44)
+            b = int(45 + (y / target_h) * 45)
             b_draw.line([(0, y), (target_w, y)], fill=(r, g, b))
         for r_size in [120, 240, 360, 480, 600]:
-            b_draw.ellipse([target_w // 2 - r_size, target_h // 2 - r_size, target_w // 2 + r_size, target_h // 2 + r_size], outline=(24, 45, 96), width=1)
+            b_draw.ellipse([target_w // 2 - r_size, target_h // 2 - r_size, target_w // 2 + r_size, target_h // 2 + r_size], outline=(24, 48, 100), width=1)
 
-    # Gradient Shadow for Headline Legibility
     grad = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
     g_draw = ImageDraw.Draw(grad)
     for y in range(int(target_h * 0.45), target_h):
@@ -282,52 +225,48 @@ def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headli
     draw.rectangle([0, 0, target_w - 1, target_h - 1], outline=(255, 215, 0), width=3)
     draw.rectangle([3, 3, target_w - 4, target_h - 4], outline=(220, 20, 36), width=2)
 
-    # Top Left Counter Capsule
-    top_badge_text = f"{bulletin}  |  {counter}"
-    badge_w = max(240, measure_text(draw, top_badge_text, size=24) + 60)
-    draw.rounded_rectangle([20, 20, 20 + badge_w, 68], radius=8, fill=(185, 14, 28), outline=(255, 215, 0), width=2)
+    top_badge_text = f"{bulletin}  |  {counter.upper()}"
+    font_top = _get_font(20, bold=True)
+    bbox = draw.textbbox((0, 0), top_badge_text, font=font_top)
+    bw = (bbox[2] - bbox[0]) + 60
+    draw.rounded_rectangle([20, 20, 20 + bw, 68], radius=8, fill=(185, 14, 28), outline=(255, 215, 0), width=2)
     draw.ellipse([34, 36, 48, 50], fill=(255, 255, 255))
     draw.ellipse([37, 39, 45, 47], fill=(235, 20, 36))
-    draw_mixed_line(draw, (56, 32), top_badge_text, size=22, fill=(255, 255, 255))
+    draw.text((56, 32), top_badge_text, font=font_top, fill=(255, 255, 255))
 
-    # Top Right Exclusive Tag
-    draw.rounded_rectangle([target_w - 260, 20, target_w - 20, 68], radius=8, fill=(10, 24, 58), outline=(0, 210, 255), width=2)
-    draw.text((target_w - 240, 32), f"{CHANNEL_NAME} EXCLUSIVE", font=_get_english_font(18), fill=(0, 220, 255))
+    draw.rounded_rectangle([target_w - 280, 20, target_w - 20, 68], radius=8, fill=(10, 24, 58), outline=(0, 210, 255), width=2)
+    draw.text((target_w - 260, 34), "NEXORA GLOBAL DESK", font=_get_font(18, bold=True), fill=(0, 220, 255))
 
-    # Lower Third Headline Strap
     strap_h = 160 if is_short else 145
     sy = target_h - strap_h - 20
     draw.rectangle([18, sy, target_w - 18, target_h - 20], fill=(8, 14, 28))
     draw.rectangle([18, sy - 4, target_w - 18, sy], fill=(255, 215, 0))
 
-    # Location & Category Kicker
-    kicker_text = f" {location}  |  {category} "
-    kw = measure_text(draw, kicker_text, size=22) + 24
+    kicker_text = f" {location.upper()}  |  {category.upper()} "
+    k_font = _get_font(18, bold=True)
+    k_bbox = draw.textbbox((0, 0), kicker_text, font=k_font)
+    kw = (k_bbox[2] - k_bbox[0]) + 20
     draw.rounded_rectangle([28, sy + 10, 28 + kw, sy + 44], radius=6, fill=(210, 16, 30))
-    draw_mixed_line(draw, (38, sy + 14), kicker_text, size=20, fill=(255, 255, 255))
+    draw.text((38, sy + 16), kicker_text, font=k_font, fill=(255, 255, 255))
 
-    # Main Headline Wrapping
-    clean_hl = re.sub(r'\s*-\s*[^-]+$', '', headline).strip()
-    words = clean_hl.split()
-    line1 = " ".join(words[:7])
-    line2 = " ".join(words[7:14]) if len(words) > 7 else ""
+    clean_hl = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', headline or '', flags=re.IGNORECASE).strip()
+    clean_hl = re.sub(r'\s*-\s*[^-]+$', '', clean_hl).strip()
+    clean_hl = re.sub(r'\s*[:|-]?\s*(What to know|Why it matters|What we know|Explained|Read more).*$', '', clean_hl, flags=re.IGNORECASE).strip()
 
-    draw_mixed_line(draw, (32, sy + 58), line1, size=(38 if is_short else 34), fill=(255, 255, 255))
-    if line2: draw_mixed_line(draw, (32, sy + 102), line2, size=(34 if is_short else 30), fill=(255, 225, 60))
+    lines = wrap_text_to_width(draw, clean_hl, _get_font(34 if is_short else 30, bold=True), target_w - 70, max_lines=2)
+    if lines:
+        draw.text((32, sy + 58), lines[0], font=_get_font(34 if is_short else 30, bold=True), fill=(255, 255, 255))
+    if len(lines) > 1:
+        draw.text((32, sy + 102), lines[1], font=_get_font(30 if is_short else 26, bold=True), fill=(255, 225, 60))
 
     card.save(output_path, "JPEG", quality=95)
     return output_path
 
-def download_scene_image(output_path, prompt="", rss_url="", rss_image_url="", article_url="", headline="", headline_text="", counter="", counter_text="", category="राष्ट्रीय", category_tag="राष्ट्रीय", location="नई दिल्ली", location_tag="नई दिल्ली", bulletin="LIVE", bulletin_label="LIVE", is_short=True, scene_idx=0, **kwargs):
+def download_scene_image(output_path, prompt="", rss_url="", rss_image_url="", article_url="", headline="", counter="STORY 1", category="WORLD", location="GLOBAL DESK", bulletin="LIVE", is_short=True, scene_idx=0, **kwargs):
     tw, th = (1080, 830) if is_short else (1100, 740)
-    headline = headline or headline_text or prompt or ""
-    counter = counter or counter_text or f"ख़बर {scene_idx + 1}"
-    category = category or category_tag or "राष्ट्रीय"
-    location = location or location_tag or "नई दिल्ली"
-    bulletin = bulletin or bulletin_label or "LIVE"
     rss_url = rss_url or rss_image_url or ""
-
     base = None
+
     if rss_url and rss_url.startswith("http") and not any(k in rss_url.lower() for k in ["google", "gstatic", "1x1", "pixel"]):
         try:
             r = requests.get(rss_url, headers=HEADERS, timeout=6)
@@ -351,7 +290,6 @@ def download_scene_image(output_path, prompt="", rss_url="", rss_image_url="", a
 
 # ================= 5. REAL STUDIO ANCHOR VIDEO ENGINE =================
 class RealStudioAnchor:
-    """Loads female/male video and plays smoothly at 1x real-time speed without any fast-forward jitter."""
     def __init__(self, video_path, target_w=760, target_h=900):
         self.w, self.h, self.frames = target_w, target_h, []
         try:
@@ -375,9 +313,9 @@ class RealStudioAnchor:
                 self.frames.append(Image.frombytes("RGB", (target_w, target_h), buf))
             proc.stdout.close()
             proc.wait()
-            logger.info(f"✅ Loaded Real Anchor: {len(self.frames)} frames cached at {target_w}x{target_h}")
+            logger.info(f"✅ Loaded International Real Anchor: {len(self.frames)} frames cached at {target_w}x{target_h}")
         except Exception as e:
-            logger.warning(f"Real studio anchor load fallback: {e}")
+            logger.warning(f"Real studio anchor fallback: {e}")
 
     @property
     def total(self): return len(self.frames)
@@ -385,7 +323,7 @@ class RealStudioAnchor:
     def get_frame(self, frame_idx):
         if not self.frames:
             img = Image.new("RGB", (self.w, self.h), (18, 28, 64))
-            draw_mixed_line(ImageDraw.Draw(img), (self.w // 2 - 120, self.h // 2), f"🔴 {CHANNEL_NAME}", size=36, fill=(255, 215, 0))
+            ImageDraw.Draw(img).text((self.w // 2 - 120, self.h // 2), f"🔴 {CHANNEL_NAME}", font=_get_font(32, bold=True), fill=(255, 215, 0))
             return img
         return self.frames[frame_idx % len(self.frames)]
 
@@ -395,7 +333,7 @@ def find_real_anchor_video(gender="female"):
         if os.path.exists(p) and os.path.getsize(p) > 10000: return p
     return None
 
-# ================= 6. LIVE RSS & STORY CURATION =================
+# ================= 6. LIVE GLOBAL RSS & STORY CURATION =================
 def _extract_rss_image(item):
     for enc in item.findall("enclosure"):
         u = enc.get("url", "")
@@ -405,7 +343,7 @@ def _extract_rss_image(item):
             u = m.get("url", "")
             if u: return u
     desc = item.findtext("description") or ""
-    match = re.search(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', desc, re.IGNORECASE)
+    match = re.search(r'<img[^>]+src=[\"\'](https?://[^\"\']+)[\"\']', desc, re.IGNORECASE)
     if match: return match.group(1)
     return ""
 
@@ -413,19 +351,20 @@ def _clean_summary(raw_html):
     if not raw_html: return ""
     clean = re.sub(r'<[^>]+>', ' ', raw_html)
     clean = re.sub(r'http\S+|www\S+', '', clean)
-    clean = re.sub(r'[\r\n\t]+', ' ', clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
     clean = re.sub(r'&[a-z]+;', ' ', clean)
     clean = re.sub(r'\s+', ' ', clean).strip()
-    sentences = re.split(r'[।!?.]', clean)
+    sentences = re.split(r'[.!?]', clean)
     for s in sentences:
         s_clean = s.strip()
-        if len(s_clean) >= 20 and not any(k in s_clean.lower() for k in ["read more", "click here", "copyright", "photo:", "source:"]):
+        if len(s_clean) >= 25 and not any(k in s_clean.lower() for k in ["read more", "click here", "photo:", "source:", "copyright", "reuters", "ap photo"]):
             return s_clean
-    return clean[:120].strip()
+    return clean[:140].strip()
 
-def fetch_trending_news(category="NATION", max_items=100):
-    urls = NEWS_FEEDS.get(category, NEWS_FEEDS["NATION"])
+def fetch_trending_international_news(category="WORLD", max_items=8):
+    urls = NEWS_FEEDS_INTL.get(category, NEWS_FEEDS_INTL["WORLD"])
     headlines, seen = [], set()
+
     for u in urls:
         if len(headlines) >= max_items: break
         try:
@@ -435,14 +374,25 @@ def fetch_trending_news(category="NATION", max_items=100):
                     raw_t = (it.findtext("title") or "").strip()
                     desc_raw = (it.findtext("description") or "").strip()
                     title = re.sub(r"\s+-\s+[^-]+$", "", raw_t).strip() or raw_t
-                    if len(title) < 10 or title.lower() in seen: continue
+                    if len(title) < 15 or title.lower() in seen: continue
                     seen.add(title.lower())
                     summary = _clean_summary(desc_raw)
+
+                    loc = "WASHINGTON" if any(w in title.lower() for w in ["us", "biden", "trump", "america"]) else (
+                        "GENEVA" if "un" in title.lower() or "united nations" in title.lower() else (
+                        "BRUSSELS" if "nato" in title.lower() or "europe" in title.lower() else (
+                        "BEIJING" if "china" in title.lower() else (
+                        "MOSCOW" if "russia" in title.lower() else "GLOBAL DESK"))))
+
+                    cat_tag = "GEOPOLITICS" if any(w in title.lower() for w in ["treaty", "summit", "president", "diplomacy"]) else (
+                        "DEFENSE" if any(w in title.lower() for w in ["military", "missile", "warship", "fighter", "defense"]) else (
+                        "WORLD TECH" if any(w in title.lower() for w in ["ai", "space", "satellite", "tech"]) else "WORLD"))
+
                     headlines.append({
                         "title": title, "summary": summary, "article_url": (it.findtext("link") or "").strip(),
                         "media_url": _extract_rss_image(it),
-                        "category_tag": "राष्ट्रीय" if len(headlines) % 2 == 0 else "अंतरराष्ट्रीय",
-                        "location_tag": "नई दिल्ली" if len(headlines) % 2 == 0 else "ग्लोबल डेस्क",
+                        "category_tag": cat_tag,
+                        "location_tag": loc,
                     })
                     if len(headlines) >= max_items: break
         except Exception: pass
@@ -450,33 +400,90 @@ def fetch_trending_news(category="NATION", max_items=100):
     rec = get_recommended_topic()
     m = [h for h in headlines if classify_headline_topic(h["title"]) == rec]
     o = [h for h in headlines if classify_headline_topic(h["title"]) != rec]
-    if m: headlines = m[:5] + o + m[5:]
+    if m: headlines = m[:4] + o + m[4:]
+
     if not headlines:
         headlines = [
-            {"title": "सुप्रीम कोर्ट का ऐतिहासिक फैसला", "summary": "सुरक्षा व्यवस्था पर कड़े दिशा-निर्देश जारी किए गए हैं।", "category_tag": "राष्ट्रीय", "location_tag": "नई दिल्ली"},
-            {"title": "भारतीय सेना और DRDO का बड़ा परीक्षण", "summary": "नई मिसाइल का सफल परीक्षण पूरा कर रक्षा क्षमता मजबूत की गई है।", "category_tag": "डिफेंस", "location_tag": "ओडिशा"},
-            {"title": "इसरो के गगनयान मिशन की बड़ी तैयारी", "summary": "अंतरिक्ष यात्रियों के सुरक्षा टेस्ट सफलतापूर्वक पूरे कर लिए गए हैं।", "category_tag": "विज्ञान", "location_tag": "बेंगलुरु"},
-            {"title": "वैश्विक भू-राजनीति में बड़ा उलटफेर", "summary": "संयुक्त राष्ट्र में भारत ने कूटनीतिक स्तर पर कड़ा रुख अपनाया है।", "category_tag": "अंतरराष्ट्रीय", "location_tag": "ग्लोबल डेस्क"},
-            {"title": "भारतीय अर्थव्यवस्था में नया उछाल", "summary": "बाजार और विदेशी निवेश में रिकॉर्ड बढ़ोतरी दर्ज की गई है।", "category_tag": "अर्थव्यवस्था", "location_tag": "मुंबई"},
+            {"title": "United Nations General Assembly Approves Historic Global Security Resolution", "summary": "Member states have voted overwhelmingly in support of strengthened international peacekeeping frameworks.", "category_tag": "GEOPOLITICS", "location_tag": "GENEVA"},
+            {"title": "Global Defense Pact Signed Between Allied Powers to Enhance Maritime Security", "summary": "Naval joint operations have been established to protect critical international shipping lanes.", "category_tag": "DEFENSE", "location_tag": "BRUSSELS"},
+            {"title": "International Aerospace Consortium Announces New Deep Space Exploration Mission", "summary": "Next-generation lunar satellite arrays have completed primary orbital qualification tests.", "category_tag": "WORLD TECH", "location_tag": "WASHINGTON"},
+            {"title": "World Economic Forum Concludes Strategic Summit on Artificial Intelligence Governance", "summary": "Global delegates agreed on strict international safety benchmarks for sovereign AI deployments.", "category_tag": "WORLD TECH", "location_tag": "DAVOS"},
+            {"title": "Diplomatic Talks Accelerate Across Regional Powers to Ensure Energy Stability", "summary": "Cross-border energy infrastructure accords were ratified following multilateral deliberations.", "category_tag": "GLOBAL ECONOMY", "location_tag": "GLOBAL DESK"}
         ]
     return headlines[:max_items]
 
-# ================= 7. SOUND DESIGN & VOICE SYNTHESIS =================
+# ================= 7. SPOKEN ENGLISH SCRIPTWRITER & NEURAL VOICE =================
+def humanize_english_anchor_speech(title, summary, prefix=""):
+    t = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', title or '', flags=re.IGNORECASE).strip()
+    t = re.sub(r'\s*-\s*[^-]+$', '', t).strip()
+    t = re.sub(r'\s*[:|-]?\s*(What to know|Why it matters|What we know|Explained|Read more|See photos).*$', '', t, flags=re.IGNORECASE).strip()
+    t = re.sub(r'\s*:\s*', ', ', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+
+    s = re.sub(r'^(EXPLAINER|ANALYSIS|READ)\s*[:|-]\s*', '', summary or '', flags=re.IGNORECASE).strip()
+    s = re.sub(r'http\S+|www\S+', '', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    parts = re.split(r'[.!?]', s)
+    s_fact = ""
+    for p in parts:
+        p_clean = p.strip()
+        if len(p_clean) >= 25 and not any(k in p_clean.lower() for k in ['read more', 'click here', 'photo:', 'source:', 'copyright', 'reuters', 'ap']):
+            s_fact = p_clean
+            break
+    if not s_fact: s_fact = "International monitoring bodies and correspondents are following developments closely."
+
+    if not t.endswith('.') and not t.endswith(','): t += '.'
+    if not s_fact.endswith('.'): s_fact += '.'
+    return f"{prefix} {t} {s_fact}".strip() if prefix else f"{t} {s_fact}".strip()
+
+def polish_english_bulletin_with_gemini(headlines):
+    if not GEMINI_API_KEY: return headlines
+    try:
+        items = [f"{i+1}. Headline: {h['title']} | Summary: {h.get('summary', '')}" for i, h in enumerate(headlines)]
+        items_text = "\\n".join(items)
+        prompt = (
+            "You are a world-class International TV News Presenter for Nexora News (broadcasting in the polished, articulate style of BBC World News / CNN International / Bloomberg).\\n"
+            "Rewrite each news item into natural, authoritative, spoken English news broadcast anchor speech.\\n"
+            "Rules:\\n"
+            "1. Deliver an articulate, confident, objective, human news presenter tone.\\n"
+            "2. Exactly 2 complete, well-crafted broadcast sentences per story (approx 25 words total).\\n"
+            "3. Strip all wire attribution tags, clickbait phrases, or incomplete headlines.\\n"
+            "4. Return ONLY a valid JSON list of strings, exactly one per item: ['...', '...']"
+        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt + "\\n\\nHeadlines:\\n" + items_text}]}]}
+        r = requests.post(url, json=payload, timeout=12)
+        if r.status_code == 200:
+            resp_text = r.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            clean_json = re.search(r'\\[.*\\]', resp_text, re.DOTALL)
+            if clean_json:
+                scripts = json.loads(clean_json.group(0))
+                for i, s in enumerate(scripts):
+                    if i < len(headlines) and len(s) > 20:
+                        headlines[i]["polished_narration"] = s
+                logger.info(f"✨ Gemini humanized {len(scripts)} International English scripts!")
+    except Exception as e: logger.warning(f"Gemini English polish notice: {e}")
+    return headlines
+
 def synthesize_broadcast_voice(text, output_path, gender="female"):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    voice = "hi-IN-SwaraNeural" if gender == "female" else "hi-IN-MadhurNeural"
+    voice = "en-US-JennyNeural" if gender == "female" else "en-US-GuyNeural"
+    clean_speech = text.replace(":", ",").replace("-", ", ").replace("  ", " ")
+
     try:
         import edge_tts
-        asyncio.run(edge_tts.Communicate(text=text, voice=voice, rate="-2%").save(output_path))
+        asyncio.run(edge_tts.Communicate(text=clean_speech, voice=voice, rate="+0%", pitch="-1Hz").save(output_path))
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1000: return output_path
-    except Exception: pass
+    except Exception as e: logger.warning(f"Edge-TTS notice: {e}")
+
     try:
-        from gtts import gTTS
-        gTTS(text=text, lang="hi", slow=False).save(output_path)
+        from gTTS import gTTS
+        gTTS(text=clean_speech, lang="en", slow=False).save(output_path)
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1000: return output_path
     except Exception: pass
+
     sr = 16000
-    dur = max(3.0, min(8.0, len(text) * 0.08))
+    dur = max(3.0, min(8.0, len(clean_speech) * 0.08))
     ns = int(dur * sr)
     t = np.linspace(0, dur, ns, endpoint=False)
     pcm = (np.sin(2 * np.pi * 220.0 * t) * 0.35 * (0.5 + 0.5 * np.sin(2 * np.pi * 3.5 * t)) * 32767).astype(np.int16)
@@ -498,22 +505,6 @@ def _get_audio_duration(path):
         return float(subprocess.check_output(cmd).decode().strip())
     except Exception: return 6.0
 
-def _extract_audio_envelope(path, duration, fps=20):
-    n_frames = max(1, int(duration * fps))
-    try:
-        cmd = ["ffmpeg", "-y", "-i", path, "-ac", "1", "-ar", "8000", "-f", "s16le", "-"]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        raw = proc.stdout.read()
-        proc.wait()
-        samples = np.frombuffer(raw, dtype=np.int16)
-        if len(samples) > 0:
-            spf = len(samples) // n_frames
-            env = [float(np.mean(np.abs(samples[i * spf:(i + 1) * spf]))) / 32768.0 for i in range(n_frames)]
-            mx = max(env) or 1.0
-            return [min(1.0, v / mx) for v in env]
-    except Exception: pass
-    return [0.5] * n_frames
-
 def generate_pro_broadcast_bed(duration, output_path="temp/broadcast_bed.wav", sr=22050):
     ns = int(duration * sr)
     t = np.linspace(0, duration, ns, endpoint=False)
@@ -521,8 +512,7 @@ def generate_pro_broadcast_bed(duration, output_path="temp/broadcast_bed.wav", s
     pulse = 0.5 + 0.5 * np.sin(2 * np.pi * 2.0 * t)
     drone = np.sin(2 * np.pi * 110.0 * t) * 0.10 * pulse
     mid = np.sin(2 * np.pi * 220.0 * t) * 0.05 * (0.5 + 0.5 * np.cos(2 * np.pi * 4.0 * t))
-    sig = bass + drone + mid
-    sig = np.clip(sig, -0.85, 0.85)
+    sig = np.clip(bass + drone + mid, -0.85, 0.85)
     pcm = (sig * 32767).astype(np.int16)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with wave.open(output_path, "wb") as wf:
@@ -538,9 +528,8 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     anchor_vid = find_real_anchor_video(script_data.get("anchor_gender", "female"))
     anchor_engine = RealStudioAnchor(anchor_vid, target_w=(1080 if is_short else 760), target_h=(986 if is_short else 900)) if anchor_vid else None
 
-    # Concatenate all voice clips cleanly with 0.6s natural pauses between stories and 1.5s outro padding
-    silence_pause = create_silence_wav(duration=0.6, output_path="temp/silence_pause.wav")
-    silence_outro = create_silence_wav(duration=1.5, output_path="temp/silence_outro.wav")
+    silence_pause = create_silence_wav(duration=0.5, output_path="temp/silence_pause.wav")
+    silence_outro = create_silence_wav(duration=1.2, output_path="temp/silence_outro.wav")
     concat_list = "temp/concat_audio.txt"
     with open(concat_list, "w", encoding="utf-8") as f:
         for idx, sc in enumerate(scene_assets):
@@ -570,14 +559,14 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     ]
     proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
     global_frame = 0
-    ticker_text = f"  ★★★  {CHANNEL_NAME} LIVE  ★★★  {TAGLINE}  ★★★  " + "  |  ".join([sc["headline"] for sc in scene_assets]) + "  ★★★  "
+    ticker_text = f"  ★★★  {CHANNEL_NAME} WORLDWIDE LIVE  ★★★  {TAGLINE}  ★★★  " + "  |  ".join([sc["headline"] for sc in scene_assets]) + "  ★★★  "
 
     total_required_frames = int((total_aud_dur + 0.5) * fps)
     frame_img = None
 
     for sc_idx, sc in enumerate(scene_assets):
         dur = sc.get("duration", 6.0)
-        dur += (1.5 if sc_idx == len(scene_assets) - 1 else 0.6)
+        dur += (1.2 if sc_idx == len(scene_assets) - 1 else 0.5)
         n_frames = max(1, int(dur * fps))
         story_card = Image.open(sc["image_path"]).convert("RGB")
 
@@ -592,54 +581,53 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
 
                 top_bar = Image.new("RGB", (W, 104), (185, 14, 28))
                 tb_draw = ImageDraw.Draw(top_bar)
-                draw_mixed_line(tb_draw, (24, 30), f"🔴 {CHANNEL_NAME}  |  LIVE", size=32, fill=(255, 255, 255))
-                clock_str = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%H:%M IST")
-                tb_draw.text((W - 170, 32), clock_str, font=_get_english_font(28), fill=(255, 215, 0))
+                tb_draw.ellipse([24, 38, 44, 58], fill=(255, 255, 255))
+                tb_draw.ellipse([27, 41, 41, 55], fill=(235, 20, 36))
+                tb_draw.text((54, 34), f"{CHANNEL_NAME}  |  GLOBAL LIVE", font=_get_font(28, bold=True), fill=(255, 255, 255))
+                clock_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+                tb_draw.text((W - 170, 36), clock_str, font=_get_font(26, bold=True), fill=(255, 215, 0))
                 frame_img.paste(top_bar, (0, 0))
 
                 mid_strap = Image.new("RGB", (W, 64), (10, 20, 48))
                 m_draw = ImageDraw.Draw(mid_strap)
                 m_draw.rectangle([0, 0, W, 4], fill=(255, 215, 0))
                 m_draw.rectangle([0, 60, W, 64], fill=(255, 215, 0))
-                draw_mixed_line(m_draw, (20, 16), f"⚡ {TAGLINE}", size=24, fill=(255, 255, 255))
+                m_draw.text((20, 18), f"⚡ {TAGLINE}", font=_get_font(22, bold=True), fill=(255, 255, 255))
                 frame_img.paste(mid_strap, (0, 934))
 
                 bot_bar = Image.new("RGB", (W, 80), (185, 14, 28))
                 b_draw = ImageDraw.Draw(bot_bar)
-                draw_mixed_line(b_draw, (200 - (global_frame * 6) % max(1, len(ticker_text) * 16), 22), ticker_text + ticker_text, size=26, fill=(255, 255, 255))
+                b_draw.text((200 - (global_frame * 6) % max(1, len(ticker_text) * 16), 24), ticker_text + ticker_text, font=_get_font(24, bold=True), fill=(255, 255, 255))
                 b_draw.rectangle([0, 0, 180, 80], fill=(240, 185, 0))
-                draw_mixed_line(b_draw, (20, 24), "🔴 ताज़ा ख़बरें", size=24, fill=(0, 0, 0))
+                b_draw.ellipse([20, 32, 34, 46], fill=(210, 16, 30))
+                b_draw.text((42, 26), "BREAKING", font=_get_font(22, bold=True), fill=(0, 0, 0))
                 frame_img.paste(bot_bar, (0, H - 80))
 
-                if logo_img:
-                    frame_img.paste(logo_img, (W - 260, 20), logo_img)
+                if logo_img: frame_img.paste(logo_img, (W - 260, 20), logo_img)
             else:
                 # Long 16:9 Virtual Studio Set
                 hdr = Image.new("RGB", (W, 70), (12, 22, 54))
                 h_draw = ImageDraw.Draw(hdr)
                 h_draw.ellipse([26, 26, 42, 42], fill=(235, 20, 36))
-                h_draw.text((50, 18), f"{CHANNEL_NAME} LIVE  |  {TAGLINE}", font=_get_english_font(24), fill=(255, 215, 0))
-                clock_str = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S IST")
-                h_draw.text((W - 190, 18), clock_str, font=_get_english_font(22), fill=(255, 255, 255))
+                h_draw.text((50, 20), f"{CHANNEL_NAME} WORLDWIDE LIVE  |  {TAGLINE}", font=_get_font(22, bold=True), fill=(255, 215, 0))
+                clock_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+                h_draw.text((W - 190, 20), clock_str, font=_get_font(20, bold=True), fill=(255, 255, 255))
                 frame_img.paste(hdr, (0, 0))
 
                 if anc_frame: frame_img.paste(anc_frame, (20, 90))
                 frame_img.paste(story_card.resize((1100, 740), Image.Resampling.LANCZOS), (790, 110))
-
-                if logo_img:
-                    frame_img.paste(logo_img, (30, H - 280), logo_img)
+                if logo_img: frame_img.paste(logo_img, (30, H - 280), logo_img)
 
                 tick_bar = Image.new("RGB", (W, 76), (185, 14, 28))
                 t_draw = ImageDraw.Draw(tick_bar)
-                draw_mixed_line(t_draw, (180 - (global_frame * 6) % max(1, len(ticker_text) * 16), 22), ticker_text + ticker_text, size=25, fill=(255, 255, 255))
+                t_draw.text((180 - (global_frame * 6) % max(1, len(ticker_text) * 16), 24), ticker_text + ticker_text, font=_get_font(24, bold=True), fill=(255, 255, 255))
                 t_draw.rectangle([0, 0, 170, 76], fill=(240, 185, 0))
-                draw_mixed_line(t_draw, (16, 22), "🔴 ताज़ा सुर्खियां", size=24, fill=(0, 0, 0))
+                t_draw.text((16, 24), "🔴 WORLD NEWS", font=_get_font(20, bold=True), fill=(0, 0, 0))
                 frame_img.paste(tick_bar, (0, H - 76))
 
             proc.stdin.write(frame_img.tobytes())
             global_frame += 1
 
-    # Ensure video frame stream completely covers the audio duration
     while global_frame < total_required_frames:
         proc.stdin.write(frame_img.tobytes())
         global_frame += 1
@@ -655,7 +643,6 @@ def generate_broadcast_thumbnail(headline, photo_path, output_path, gender="fema
     TW, TH = 1280, 720
     base = Image.new("RGB", (TW, TH), (12, 22, 54))
 
-    # 1. Right side: Real Ground News Photo or high-tech dynamic backdrop
     photo_w = 800
     lead_img_path = "temp/lead_raw_photo.jpg" if os.path.exists("temp/lead_raw_photo.jpg") else photo_path
     if lead_img_path and os.path.exists(lead_img_path):
@@ -677,7 +664,6 @@ def generate_broadcast_thumbnail(headline, photo_path, output_path, gender="fema
         for gy in range(0, TH, 100): bdraw.line([(0, gy), (photo_w, gy)], fill=(28, 48, 105), width=1)
         base.paste(backdrop, (TW - photo_w, 0))
 
-    # 2. Left side: Real Studio News Anchor (Alert, professional gaze at frame 30)
     anc_vid = find_real_anchor_video(gender)
     if anc_vid:
         try:
@@ -685,7 +671,6 @@ def generate_broadcast_thumbnail(headline, photo_path, output_path, gender="fema
             if anc.total > 0: base.paste(anc.get_frame(30), (0, 0))
         except Exception: pass
 
-    # 3. Soft gradient seam between anchor and right side backdrop
     overlay = Image.new("RGBA", (TW, TH), (0, 0, 0, 0))
     odraw = ImageDraw.Draw(overlay)
     for x in range(440, 560):
@@ -693,39 +678,37 @@ def generate_broadcast_thumbnail(headline, photo_path, output_path, gender="fema
         odraw.line([(x, 0), (x, TH)], fill=(12, 22, 54, alpha))
     base = Image.alpha_composite(base.convert("RGBA"), overlay).convert("RGB")
 
-    # 4. Red & Gold Studio Borders
     draw = ImageDraw.Draw(base)
     draw.rectangle([0, 0, TW - 1, TH - 1], outline=(220, 20, 36), width=6)
     draw.rectangle([6, 6, TW - 7, TH - 7], outline=(255, 215, 0), width=2)
 
-    # 5. Top Left Live Badge: 🔴 NEXORA NEWS | LIVE
-    draw.rounded_rectangle([30, 24, 440, 78], radius=8, fill=(210, 16, 30), outline=(255, 215, 0), width=2)
+    # Top Left: Live Nexora News
+    draw.rounded_rectangle([30, 24, 460, 78], radius=8, fill=(210, 16, 30), outline=(255, 215, 0), width=2)
     draw.ellipse([46, 42, 64, 60], fill=(255, 255, 255))
     draw.ellipse([50, 46, 60, 56], fill=(235, 20, 36))
-    draw.text((78, 36), f"{CHANNEL_NAME}  |  LIVE", font=_get_english_font(28), fill=(255, 255, 255))
+    draw.text((78, 36), "NEXORA NEWS  |  WORLD LIVE", font=_get_font(24, bold=True), fill=(255, 255, 255))
 
-    # 6. Top Right: Channel Logo & Breaking Tag
     if os.path.exists(LOGO_PATH):
         try:
             logo_raw = Image.open(LOGO_PATH).convert("RGBA").resize((140, 140), Image.Resampling.LANCZOS)
             base.paste(logo_raw, (TW - 170, 24), logo_raw)
         except Exception: pass
 
-    # 7. Lower Third Headline Box (High-CTR Bold Text)
-    draw.rectangle([20, TH - 230, TW - 20, TH - 20], fill=(8, 14, 28))
-    draw.rectangle([20, TH - 234, TW - 20, TH - 228], fill=(255, 215, 0))
+    # Lower Third Headline Box (High-CTR Bold Text)
+    draw.rectangle([20, TH - 220, TW - 20, TH - 20], fill=(8, 14, 28))
+    draw.rectangle([20, TH - 224, TW - 20, TH - 218], fill=(255, 215, 0))
 
-    clean_hl = re.sub(r"\s*-\s*[^-]+$", "", headline or "आज की बड़ी ख़बरें").strip()
-    w = clean_hl.split()
-    line1 = " ".join(w[:6])
-    line2 = " ".join(w[6:13]) if len(w) > 6 else ""
+    clean_hl = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', headline or '', flags=re.IGNORECASE).strip()
+    clean_hl = re.sub(r'\s*-\s*[^-]+$', '', clean_hl).strip()
+    clean_hl = clean_hl.upper()
 
-    draw_mixed_line(draw, (44, TH - 210), line1, size=52, fill=(0, 0, 0))
-    draw_mixed_line(draw, (40, TH - 212), line1, size=52, fill=(255, 235, 60))
-
-    if line2:
-        draw_mixed_line(draw, (44, TH - 138), line2, size=48, fill=(0, 0, 0))
-        draw_mixed_line(draw, (40, TH - 140), line2, size=48, fill=(255, 255, 255))
+    lines = wrap_text_to_width(draw, clean_hl, _get_font(42, bold=True), TW - 80, max_lines=2)
+    if lines:
+        draw.text((44, TH - 200), lines[0], font=_get_font(42, bold=True), fill=(0, 0, 0))
+        draw.text((40, TH - 202), lines[0], font=_get_font(42, bold=True), fill=(255, 235, 60))
+    if len(lines) > 1:
+        draw.text((44, TH - 132), lines[1], font=_get_font(38, bold=True), fill=(0, 0, 0))
+        draw.text((40, TH - 134), lines[1], font=_get_font(38, bold=True), fill=(255, 255, 255))
 
     base.save(output_path, "JPEG", quality=95)
     return output_path
@@ -789,7 +772,7 @@ def upload_to_youtube(video_path, title, description, tags, thumb_path=None, is_
 
     safe_t = _sanitize_title(title, is_short=is_short)
     fsz = os.path.getsize(video_path)
-    body = {"snippet": {"title": safe_t, "description": description[:4500], "tags": tags[:25], "categoryId": "25", "defaultLanguage": "hi"}, "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}}
+    body = {"snippet": {"title": safe_t, "description": description[:4500], "tags": tags[:25], "categoryId": "25", "defaultLanguage": "en"}, "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}}
     try:
         init_r = requests.post("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Length": str(fsz), "X-Upload-Content-Type": "video/mp4"}, json=body, timeout=30)
         up_url = init_r.headers.get("Location")
@@ -840,17 +823,18 @@ def upload_to_youtube(video_path, title, description, tags, thumb_path=None, is_
     return None
 
 # ================= 10. EPISODE ORCHESTRATOR =================
-def produce_news_episode(category="AUTO", is_short=True, edition="auto", anchor_gender=None, skip_upload=False):
+def produce_news_episode(category="WORLD", is_short=True, edition="auto", anchor_gender=None, skip_upload=False):
     ed = get_current_edition() if edition == "auto" else edition.upper()
     cfg = EDITION_CONFIGS.get(ed, EDITION_CONFIGS["MORNING"])
-    headlines = fetch_trending_news(category=("NATION" if category == "AUTO" else category), max_items=(5 if is_short else cfg["target_count"]))
+    headlines = fetch_trending_international_news(category=("WORLD" if category == "AUTO" else category), max_items=(5 if is_short else cfg["target_count"]))
     gender = anchor_gender or ("female" if random.random() < 0.5 else "male")
 
-    # High-CTR Dynamic Title with Specific Breaking Lead
-    lead_t = re.sub(r"\s*-\s*[^-]+$", "", headlines[0]["title"]).strip() if headlines else "देश की बड़ी खबर"
-    lead_short = lead_t[:42].strip() + ("..." if len(lead_t) > 42 else "")
+    lead_t = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', headlines[0]["title"], flags=re.IGNORECASE).strip() if headlines else "Global Strategic Developments"
+    lead_t = re.sub(r'\s*-\s*[^-]+$', '', lead_t).strip()
+    lead_short = lead_t[:45].strip() + ("..." if len(lead_t) > 45 else "")
+
     if is_short:
-        video_title = f"🚨 {lead_short} | आज की 5 बड़ी खबरें! #Shorts #HindiNews #NexoraNews"
+        video_title = f"🚨 Breaking: {lead_short} | Top 5 World News #Shorts #WorldNews #NexoraNews"
     else:
         video_title = f"🔴 {lead_short} | {cfg['title_prefix']} | {CHANNEL_NAME}"
 
@@ -865,54 +849,56 @@ def produce_news_episode(category="AUTO", is_short=True, edition="auto", anchor_
             intro_img,
             headline=f"{cfg['title_prefix']} | {CHANNEL_NAME}",
             counter="LIVE INTRO",
-            category="विशेष बुलेटिन",
-            location="स्टूडियो हेडक्वार्टर",
+            category="SPECIAL BULLETIN",
+            location="GLOBAL HEADQUARTERS",
             bulletin=cfg["bulletin_label"],
             is_short=False,
         )
         intro_narration = (
-            f"नमस्कार! आप देख रहे हैं {CHANNEL_NAME_HI}—{TAGLINE}। "
-            f"आज के इस विशेष महाबुलेटिन में हम लेकर आए हैं देश, दुनिया और टेक्नोलॉजी की तमाम बड़ी व महत्वपूर्ण खबरें। "
-            f"आइए बिना किसी देरी के सीधे रुख करते हैं आज के इस बुलेटिन की..."
+            f"Welcome to {CHANNEL_NAME}—{TAGLINE}. "
+            f"Bringing you continuous global coverage across international geopolitics, diplomacy, and global technology. "
+            f"Here are today's top international developments."
         )
         synthesize_broadcast_voice(intro_narration, intro_aud, gender=gender)
         assets.append({
             "scene_id": 0, "image_path": intro_img, "audio_path": intro_aud,
-            "headline": f"विशेष बुलेटिन: {CHANNEL_NAME_HI}", "duration": _get_audio_duration(intro_aud),
+            "headline": f"Global Briefing: {CHANNEL_NAME}", "duration": _get_audio_duration(intro_aud),
         })
 
-    # ===== MAIN STORIES WITH COMPLETE, CLEAR NEWS BRIEFING =====
+    # ===== MAIN STORIES WITH ARTICULATE SPOKEN ENGLISH NARRATIVE =====
     intro_prefixes = [
-        "पहली बड़ी खबर।",
-        "अगली महत्वपूर्ण सुर्खी।",
-        "तीसरा बड़ा घटनाक्रम।",
-        "चौथी बड़ी खबर पर नजर डालें तो,",
-        "और पांचवीं प्रमुख सुर्खी।",
-        "छठी महत्वपूर्ण खबर।",
-        "सातवां बड़ा अपडेट।",
-        "आठवीं प्रमुख खबर।",
-        "नौवां बड़ा घटनाक्रम।",
-        "दसवीं और अंतिम बड़ी सुर्खी।"
+        "In our top international story,",
+        "Turning now to global diplomacy,",
+        "In major defense and strategic developments,",
+        "Looking at international technology and markets,",
+        "And in other critical global news,",
+        "In our sixth top development,",
+        "Moving to international security,",
+        "In major aerospace and technological strides,"
     ]
+
+    headlines = polish_english_bulletin_with_gemini(headlines)
 
     for idx, h in enumerate(headlines):
         sid = idx + 1
         img_p, aud_p = f"temp/scene_{sid}.jpg", f"temp/voice_{sid}.mp3"
-        counter = f"ख़बर {sid} / {len(headlines)}" if not is_short else f"ख़बर {sid}"
-        clean_title = re.sub(r'\s*-\s*[^-]+$', '', h["title"]).strip()
-        download_scene_image(img_p, prompt=clean_title, rss_url=h.get("media_url", ""), article_url=h.get("article_url", ""), headline=clean_title, counter=counter, category=h.get("category_tag", "राष्ट्रीय"), location=h.get("location_tag", "नई दिल्ली"), bulletin=cfg["bulletin_label"], is_short=is_short, scene_idx=idx)
+        counter = f"STORY {sid} OF 5" if is_short else f"STORY {sid} OF {len(headlines)}"
+        bulletin_tag = "WORLD 5" if is_short else cfg["bulletin_label"]
+
+        clean_title = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', h["title"], flags=re.IGNORECASE).strip()
+        clean_title = re.sub(r'\s*-\s*[^-]+$', '', clean_title).strip()
+
+        download_scene_image(img_p, prompt=clean_title, rss_url=h.get("media_url", ""), article_url=h.get("article_url", ""), headline=clean_title, counter=counter, category=h.get("category_tag", "WORLD"), location=h.get("location_tag", "GLOBAL DESK"), bulletin=bulletin_tag, is_short=is_short, scene_idx=idx)
         if idx == 0 and os.path.exists(img_p): lead_photo = img_p
 
         prefix = intro_prefixes[idx % len(intro_prefixes)]
-        summary_fact = h.get("summary", "").strip()
-        if not summary_fact or len(summary_fact) < 15:
-            summary_fact = "इस बड़े मामले से जुड़ी हर महत्वपूर्ण अपडेट पर हमारी नजर लगातार बनी हुई है।"
-
-        # Fully articulated news briefing: Headline + Clear factual context
-        if is_short and idx == len(headlines) - 1:
-            narration = f"{prefix} {clean_title}। {summary_fact}। देश और दुनिया की तमाम बड़ी खबरों के लिए सब्सक्राइब करें {CHANNEL_NAME_HI}।"
+        if h.get("polished_narration"):
+            narration = f"{prefix} {h['polished_narration']}"
         else:
-            narration = f"{prefix} {clean_title}। {summary_fact}।"
+            narration = humanize_english_anchor_speech(h["title"], h.get("summary", ""), prefix=prefix)
+
+        if is_short and idx == len(headlines) - 1:
+            narration += f" For continuous 24/7 global news coverage, subscribe to {CHANNEL_NAME}."
 
         synthesize_broadcast_voice(narration, aud_p, gender=gender)
         assets.append({"scene_id": sid, "image_path": img_p, "audio_path": aud_p, "headline": clean_title, "duration": _get_audio_duration(aud_p)})
@@ -923,31 +909,30 @@ def produce_news_episode(category="AUTO", is_short=True, edition="auto", anchor_
         outro_aud = "temp/voice_outro.mp3"
         create_broadcast_story_card(
             outro_img,
-            headline="सब्सक्राइब करें नेक्सोरा न्यूज़ | Bell Icon दबाएं",
+            headline=f"Subscribe to {CHANNEL_NAME} | Global Updates",
             counter="LIVE OUTRO",
-            category="चैनल अपडेट",
-            location="स्टूडियो हेडक्वार्टर",
+            category="NETWORK UPDATE",
+            location="GLOBAL HEADQUARTERS",
             bulletin="SUBSCRIBE NOW",
             is_short=False,
         )
         outro_narration = (
-            f"तो ये थीं आज की तमाम बड़ी और अहम खबरें। "
-            f"देश, दुनिया और टेक्नोलॉजी जगत के हर बड़े घटनाक्रम की सबसे तेज़ और सटीक कवरेज के लिए '{CHANNEL_NAME_HI}' को अभी सब्सक्राइब करें और बेल आइकन दबाना न भूलें। "
-            f"देखते रहिए {CHANNEL_NAME_HI}—{TAGLINE_HI}। नमस्कार!"
+            f"Those are the top international headlines from the {CHANNEL_NAME} global newsroom. "
+            f"For verified 24/7 world coverage across defense, geopolitics, and technology, subscribe to {CHANNEL_NAME} and enable notifications. "
+            f"Thank you for watching."
         )
         synthesize_broadcast_voice(outro_narration, outro_aud, gender=gender)
         assets.append({
             "scene_id": len(headlines) + 1, "image_path": outro_img, "audio_path": outro_aud,
-            "headline": f"सब्सक्राइब करें {CHANNEL_NAME_HI}", "duration": _get_audio_duration(outro_aud),
+            "headline": f"Subscribe to {CHANNEL_NAME}", "duration": _get_audio_duration(outro_aud),
         })
 
     out = "final_short.mp4" if is_short else "final_long.mp4"
     build_news_video(script, assets, out, is_short=is_short)
     thumb = "temp/broadcast_thumb.jpg"
-    if not is_short: generate_broadcast_thumbnail(headlines[0]["title"] if headlines else "आज की बड़ी खबरें", lead_photo, thumb, gender=gender)
+    if not is_short: generate_broadcast_thumbnail(headlines[0]["title"] if headlines else "Top International News", lead_photo, thumb, gender=gender)
 
     if not skip_upload:
-        # Auto-generate video chapter timestamps for YouTube SEO & Google Key Moments
         time_cursor = 0.0
         chapters = []
         for sc in assets:
@@ -957,18 +942,17 @@ def produce_news_episode(category="AUTO", is_short=True, edition="auto", anchor_
 
         desc = (
             f"{script['title']}\n\n"
-            f"📺 {CHANNEL_NAME} ({CHANNEL_NAME_HI})\n"
-            f"⚡ {TAGLINE} | {TAGLINE_HI}\n\n"
-            f"📌 इस बुलेटिन के मुख्य समाचार (Chapters & Timestamps):\n"
+            f"📺 {CHANNEL_NAME} (Worldwide)\n"
+            f"⚡ {TAGLINE}\n"
+            f"🌐 {SUB_TAGLINE}\n\n"
+            f"📌 In This Global Broadcast (Chapters & Timestamps):\n"
             + "\n".join(chapters)
-            + f"\n\n🌐 Channel Identity & Mission:\n"
-            f"• Category: National, International & Technology\n"
-            f"• Format: 24/7 AI Broadcast Network\n"
-            f"• Language: Hindi (हिन्दी)\n\n"
-            f"🔔 देश और दुनिया की तमाम बड़ी खबरों के लिए Nexora News को Subscribe करें और Bell Icon दबाएं!\n\n"
-            f"#NexoraNews #HindiNews #BreakingNews #IndiaNews #TopNews #Shorts #NewsLive #LatestNews"
+            + f"\n\n🌐 About Nexora News:\n"
+            f"Nexora News is an autonomous AI-powered global news network delivering verified, independent coverage across international diplomacy, geopolitics, defense, and frontier technology.\n\n"
+            f"🔔 Subscribe to Nexora News for continuous 24/7 international updates and ring the notification bell!\n\n"
+            f"#NexoraNews #WorldNews #BreakingNews #GlobalAffairs #Geopolitics #InternationalNews #DefenseNews #Shorts"
         )
-        upload_tags = [CHANNEL_NAME, CHANNEL_NAME_HI, "Nexora News Live", "Hindi News", "Breaking News", "आज की ताजा खबर", "Top News Today", "India News Live", "Superfast News", "News Shorts", "Hindi Samachar", "Daily News Hindi", "Technology News", "World News Hindi"]
+        upload_tags = [CHANNEL_NAME, "Nexora News World", "World News", "Breaking News", "International News", "Global Affairs", "Geopolitics", "Defense News", "World News Today", "Daily World News", "Global News Live", "BBC World News", "CNN", "Technology News", "United Nations"]
         upload_to_youtube(out, script["title"], desc, upload_tags, thumb_path=thumb, is_short=is_short)
     return out
 
@@ -977,7 +961,7 @@ def main():
     p.add_argument("--once", action="store_true")
     p.add_argument("--type", default="both")
     p.add_argument("--edition", default="auto")
-    p.add_argument("--category", default="AUTO")
+    p.add_argument("--category", default="WORLD")
     p.add_argument("--anchor", default="auto")
     p.add_argument("--skip-upload", action="store_true")
     p.add_argument("--check-youtube", action="store_true")
@@ -993,7 +977,7 @@ def main():
     if vtype not in ("short", "long", "both"): vtype = "both"
     vedition = (args.edition or "auto").strip().lower()
     if vedition not in ("auto", "morning", "afternoon", "evening"): vedition = "auto"
-    vcat = (args.category or "AUTO").strip().upper()
+    vcat = (args.category or "WORLD").strip().upper()
     vanc = None if (not args.anchor or args.anchor == "auto") else args.anchor.strip().lower()
 
     if vtype in ("short", "both"): produce_news_episode(category=vcat, is_short=True, edition=vedition, anchor_gender=vanc, skip_upload=args.skip_upload)
