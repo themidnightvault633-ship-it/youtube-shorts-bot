@@ -1,12 +1,12 @@
-name: 24/7 Autonomous AI News Channel
+name: 24/7 Autonomous International AI News Channel (Nexora News)
 
 on:
   schedule:
-    # Runs 3 times daily:
-    # 02:30 UTC = 08:00 AM IST (Subah: 24 Ghante ki Top 10 Badi Khabrein)
-    # 08:00 UTC = 01:30 PM IST (Dopahar: Desh-Duniya ki Badi Khabrein)
-    # 14:30 UTC = 08:00 PM IST (Shaam: Prime Time Top 10 Superfast News)
-    - cron: '30 2,8,14 * * *'
+    # 3 Worldwide Viral Peak Broadcasts (UTC time):
+    # 06:30 UTC = 12:00 PM IST | 06:30 AM GMT (Europe Morning Briefing)
+    # 13:30 UTC = 07:00 PM IST | 08:30 AM EST (US Morning Commute & Europe Lunch - Peak Viral Slot)
+    # 21:30 UTC = 03:00 AM IST | 04:30 PM EST (US Evening Prime Time Wrap)
+    - cron: '30 6,13,21 * * *'
   workflow_dispatch:
     inputs:
       video_type:
@@ -14,11 +14,11 @@ on:
         required: false
         default: 'both'
       category:
-        description: 'News Category (AUTO, NATION, WORLD, TECHNOLOGY)'
+        description: 'News Category (WORLD, DEFENSE, TECHNOLOGY)'
         required: false
-        default: 'AUTO'
+        default: 'WORLD'
       edition:
-        description: 'Long Video Edition (auto, morning, afternoon, evening)'
+        description: 'Broadcast Edition (auto, morning, afternoon, evening)'
         required: false
         default: 'auto'
 
@@ -44,14 +44,12 @@ jobs:
         with:
           ffmpeg-version: release
 
-      - name: Setup Hindi Devanagari Fonts
+      - name: Setup International Broadcast Fonts
         timeout-minutes: 2
         run: |
           mkdir -p assets/fonts
-          if [ ! -f assets/fonts/NotoSansDevanagari-Bold.ttf ] && [ ! -f /usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf ]; then
-            sudo apt-get update -y || true
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fonts-noto-core || true
-          fi
+          sudo apt-get update -y || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation fonts-noto-core || true
 
       - name: Install Python Dependencies
         timeout-minutes: 5
@@ -67,28 +65,28 @@ jobs:
         run: |
           python main.py --check-youtube || true
 
-      - name: Generate & Upload Live News Videos to YouTube
+      - name: Generate & Upload Live International News to YouTube
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
-          python main.py --once --type "${{ github.event.inputs.video_type || 'both' }}" --category "${{ github.event.inputs.category || 'AUTO' }}" --edition "${{ github.event.inputs.edition || 'auto' }}"
+          python main.py --once --type "${{ github.event.inputs.video_type || 'both' }}" --category "${{ github.event.inputs.category || 'WORLD' }}" --edition "${{ github.event.inputs.edition || 'auto' }}"
 
       - name: Save & Commit Audience Analytics Feedback Loop
         if: always()
         run: |
           git config --local user.email "action@github.com"
-          git config --local user.name "NewsBot Analytics Engine"
+          git config --local user.name "Nexora Analytics Engine"
           git add assets/topic_analytics.json || true
-          git diff --staged --quiet || (git commit -m "Auto-update YouTube topic analytics feedback loop [skip ci]" && git push) || true
+          git diff --staged --quiet || (git commit -m "Auto-update YouTube global topic analytics [skip ci]" && git push) || true
 
       - name: Upload Generated Videos as Downloadable Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: generated-news-videos
+          name: generated-international-videos
           path: |
             output/*.mp4
             output/YOUTUBE_UPLOAD_REPORT.txt
