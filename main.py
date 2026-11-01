@@ -33,18 +33,20 @@ GLOBAL_TOPICS = {
 }
 
 ENTITY_MAP_INTL = [
-    (["white house", "president", "biden", "trump", "washington", "congress", "capitol"], "White House Washington DC press briefing President United States"),
-    (["united nations", "un security council", "un general assembly", "geneva", "guterres"], "United Nations Security Council chamber Geneva New York diplomacy"),
+    (["germany", "german", "berlin", "protest", "protests", "looting", "cost of living", "france", "paris"], "protesters in European city streets banners demonstration police crowd"),
+    (["israel", "gaza", "strike", "strikes", "hospital", "middle east", "beirut", "lebanon"], "Middle East city street damage emergency response smoke rescue operation"),
+    (["trump", "lawsuit", "judge", "court", "wall street journal", "justice", "epstein"], "Federal court building Washington DC United States justice legal gavel"),
+    (["india", "opposition", "rally", "delhi", "election", "modi", "parliament"], "New Delhi India political rally large crowd banners demonstration outdoor"),
+    (["white house", "president", "biden", "washington", "congress", "capitol"], "White House Washington DC press briefing President United States"),
+    (["united nations", "un security council", "un general assembly", "geneva", "guterres"], "United Nations Security Council chamber Geneva New York diplomacy flags"),
     (["nato", "pentagon", "defense secretary", "allies", "brussels"], "NATO headquarters summit Brussels defense ministers alliance meeting"),
-    (["aircraft carrier", "navy", "warship", "fighter jet", "stealth bomber", "air force"], "Modern aircraft carrier warship operations at sea military fighter jet launch"),
+    (["aircraft carrier", "navy", "warship", "fighter jet", "stealth bomber", "air force", "missile"], "Modern aircraft carrier warship operations at sea military fighter jet launch"),
     (["space", "nasa", "spacex", "rocket", "launch", "satellite", "astronaut", "moon", "mars"], "NASA rocket launch Cape Canaveral space exploration satellite deployment"),
-    (["kremlin", "russia", "putin", "moscow", "ukraine"], "Kremlin Red Square Moscow official government architecture"),
+    (["kremlin", "russia", "putin", "moscow", "ukraine"], "Kremlin Red Square Moscow official government architecture diplomacy"),
     (["china", "beijing", "xi jinping", "taiwan", "south china sea"], "Great Hall of the People Beijing China official international diplomacy"),
     (["artificial intelligence", "ai", "supercomputer", "chips", "semiconductor", "nvidia"], "Advanced artificial intelligence high tech data center server architecture"),
     (["wall street", "stock exchange", "economy", "federal reserve", "central bank", "treasury"], "New York Stock Exchange Wall Street financial trading floor"),
-    (["europe", "european union", "brussels", "london", "downing street", "parliament"], "Palace of Westminster UK Parliament London Downing Street"),
-    (["middle east", "israel", "gaza", "iran", "red sea", "diplomacy"], "Middle East diplomatic negotiations peace summit regional security"),
-    (["climate", "renewable", "solar", "wind", "electric", "environment"], "Renewable energy wind turbines solar farm modern climate technology")
+    (["europe", "european union", "brussels", "london", "downing street"], "Palace of Westminster UK Parliament London Downing Street"),
 ]
 
 def map_headline_to_search_query(headline):
@@ -137,7 +139,8 @@ def get_recommended_topic():
 def _validate_image(raw_bytes, target_w, target_h):
     img = Image.open(BytesIO(raw_bytes)).convert("RGB")
     w, h = img.size
-    if w < 180 or h < 140: raise ValueError("Image too small")
+    # Threshold set to 60 so BBC/Wire thumbnails (240x135) are accepted and upscaled cleanly
+    if w < 60 or h < 60: raise ValueError("Image too small")
     tr, sr = target_w / float(target_h), w / float(h)
     if sr > tr:
         nw = int(h * tr)
@@ -175,7 +178,7 @@ def _fetch_ground_news_photo(headline, target_w, target_h):
             title_l = page.get("title", "").lower()
             if any(k in title_l for k in ["book", "document", "scan", "archive", "drawing", "map", "flag", "1800", "1900", "1920", "1940"]):
                 continue
-            if u.lower().endswith((".jpg", ".jpeg", ".png")) and info.get("width", 0) >= 600:
+            if u.lower().endswith((".jpg", ".jpeg", ".png")) and info.get("width", 0) >= 400:
                 ir = requests.get(u, headers=HEADERS, timeout=6)
                 if ir.status_code == 200: return _validate_image(ir.content, target_w, target_h)
     except Exception: pass
@@ -184,15 +187,15 @@ def _fetch_ground_news_photo(headline, target_w, target_h):
 def _fetch_pollinations_image(prompt, target_w, target_h):
     mapped_q = map_headline_to_search_query(prompt)
     clean_p = f"high quality real global photojournalism press photography of {mapped_q}, cinematic lighting, photorealistic, raw news footage, 8k, highly detailed realistic texture, no text, no captions, authentic international press broadcast background"
-    u = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(clean_p)}?width={target_w}&height={target_h}&nologo=true&model=flux"
+    u = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(clean_p)}?width={target_w}&height={target_h}&nologo=true&model=turbo"
     try:
-        r = requests.get(u, timeout=14)
+        r = requests.get(u, timeout=8)
         if r.status_code == 200 and len(r.content) > 15000:
             return _validate_image(r.content, target_w, target_h)
     except Exception: pass
     return None
 
-def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headline="", counter="STORY 1 OF 5", category="WORLD", location="GLOBAL DESK", bulletin="LIVE", base_img=None, is_short=False, **kwargs):
+def create_broadcast_story_card(output_path, target_w=1160, target_h=928, headline="", counter="STORY 1 OF 5", category="WORLD", location="GLOBAL DESK", bulletin="LIVE", base_img=None, is_short=False, **kwargs):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     card = Image.new("RGB", (target_w, target_h), (8, 14, 28))
 
@@ -213,6 +216,7 @@ def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headli
         for r_size in [120, 240, 360, 480, 600]:
             b_draw.ellipse([target_w // 2 - r_size, target_h // 2 - r_size, target_w // 2 + r_size, target_h // 2 + r_size], outline=(24, 48, 100), width=1)
 
+    # Gradient Shadow for Headline Legibility
     grad = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
     g_draw = ImageDraw.Draw(grad)
     for y in range(int(target_h * 0.45), target_h):
@@ -237,7 +241,7 @@ def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headli
     draw.rounded_rectangle([target_w - 280, 20, target_w - 20, 68], radius=8, fill=(10, 24, 58), outline=(0, 210, 255), width=2)
     draw.text((target_w - 260, 34), "NEXORA GLOBAL DESK", font=_get_font(18, bold=True), fill=(0, 220, 255))
 
-    strap_h = 160 if is_short else 145
+    strap_h = 160 if is_short else 155
     sy = target_h - strap_h - 20
     draw.rectangle([18, sy, target_w - 18, target_h - 20], fill=(8, 14, 28))
     draw.rectangle([18, sy - 4, target_w - 18, sy], fill=(255, 215, 0))
@@ -250,7 +254,7 @@ def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headli
     draw.text((38, sy + 16), kicker_text, font=k_font, fill=(255, 255, 255))
 
     clean_hl = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', headline or '', flags=re.IGNORECASE).strip()
-    clean_hl = re.sub(r'\s*-\s*[^-]+$', '', clean_hl).strip()
+    clean_hl = re.sub(r'\s*-\s*(BBC News|Reuters|AP|CNN|The Guardian|The New York Times|Al Jazeera|NDTV|Times of India|AFP|Bloomberg).*$', '', clean_hl, flags=re.IGNORECASE).strip()
     clean_hl = re.sub(r'\s*[:|-]?\s*(What to know|Why it matters|What we know|Explained|Read more).*$', '', clean_hl, flags=re.IGNORECASE).strip()
 
     lines = wrap_text_to_width(draw, clean_hl, _get_font(34 if is_short else 30, bold=True), target_w - 70, max_lines=2)
@@ -263,14 +267,14 @@ def create_broadcast_story_card(output_path, target_w=1100, target_h=740, headli
     return output_path
 
 def download_scene_image(output_path, prompt="", rss_url="", rss_image_url="", article_url="", headline="", counter="STORY 1", category="WORLD", location="GLOBAL DESK", bulletin="LIVE", is_short=True, scene_idx=0, **kwargs):
-    tw, th = (1080, 830) if is_short else (1100, 740)
+    tw, th = (1080, 830) if is_short else (1160, 928)
     rss_url = rss_url or rss_image_url or ""
     base = None
 
     if rss_url and rss_url.startswith("http") and not any(k in rss_url.lower() for k in ["google", "gstatic", "1x1", "pixel"]):
         try:
             r = requests.get(rss_url, headers=HEADERS, timeout=6)
-            if r.status_code == 200 and len(r.content) > 12000: base = _validate_image(r.content, tw, th)
+            if r.status_code == 200 and len(r.content) > 10000: base = _validate_image(r.content, tw, th)
         except Exception: pass
 
     if base is None and article_url:
@@ -314,18 +318,24 @@ class RealStudioAnchor:
             proc.stdout.close()
             proc.wait()
             logger.info(f"✅ Loaded International Real Anchor: {len(self.frames)} frames cached at {target_w}x{target_h}")
+            if len(self.frames) > 50:
+                forward_frames = self.frames[5:50]
+                self.active_loop = forward_frames + forward_frames[::-1]
+            else:
+                self.active_loop = self.frames
         except Exception as e:
             logger.warning(f"Real studio anchor fallback: {e}")
+            self.active_loop = []
 
     @property
-    def total(self): return len(self.frames)
+    def total(self): return len(self.active_loop)
 
     def get_frame(self, frame_idx):
-        if not self.frames:
+        if not self.active_loop:
             img = Image.new("RGB", (self.w, self.h), (18, 28, 64))
             ImageDraw.Draw(img).text((self.w // 2 - 120, self.h // 2), f"🔴 {CHANNEL_NAME}", font=_get_font(32, bold=True), fill=(255, 215, 0))
             return img
-        return self.frames[frame_idx % len(self.frames)]
+        return self.active_loop[frame_idx % len(self.active_loop)]
 
 def find_real_anchor_video(gender="female"):
     g = (gender or "female").lower()
@@ -415,7 +425,7 @@ def fetch_trending_international_news(category="WORLD", max_items=8):
 # ================= 7. SPOKEN ENGLISH SCRIPTWRITER & NEURAL VOICE =================
 def humanize_english_anchor_speech(title, summary, prefix=""):
     t = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', title or '', flags=re.IGNORECASE).strip()
-    t = re.sub(r'\s*-\s*[^-]+$', '', t).strip()
+    t = re.sub(r'\s*-\s*(BBC News|Reuters|AP|CNN|The Guardian|The New York Times|Al Jazeera|NDTV|Times of India|AFP|Bloomberg).*$', '', t, flags=re.IGNORECASE).strip()
     t = re.sub(r'\s*[:|-]?\s*(What to know|Why it matters|What we know|Explained|Read more|See photos).*$', '', t, flags=re.IGNORECASE).strip()
     t = re.sub(r'\s*:\s*', ', ', t)
     t = re.sub(r'\s+', ' ', t).strip()
@@ -427,7 +437,7 @@ def humanize_english_anchor_speech(title, summary, prefix=""):
     s_fact = ""
     for p in parts:
         p_clean = p.strip()
-        if len(p_clean) >= 25 and not any(k in p_clean.lower() for k in ['read more', 'click here', 'photo:', 'source:', 'copyright', 'reuters', 'ap']):
+        if len(p_clean) >= 20 and not any(k in p_clean.lower() for k in ['read more', 'click here', 'photo:', 'source:', 'copyright']):
             s_fact = p_clean
             break
     if not s_fact: s_fact = "International monitoring bodies and correspondents are following developments closely."
@@ -553,7 +563,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
         "-i", merged_voice, "-i", bgm_path,
-        "-filter_complex", "[1:a]loudnorm=I=-14:LRA=11:TP=-1.5[vnorm];[2:a]volume=0.18[bgm];[vnorm][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+        "-filter_complex", "[1:a]loudnorm=I=-13:LRA=7:TP=-1.0[voice];[2:a]volume=0.08[bgm];[voice][bgm]amix=inputs=2:weights=1.0 0.12:duration=first:dropout_transition=2[aout]",
         "-map", "0:v", "-map", "[aout]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", output_path
     ]
@@ -605,25 +615,43 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
 
                 if logo_img: frame_img.paste(logo_img, (W - 260, 20), logo_img)
             else:
-                # Long 16:9 Virtual Studio Set
-                hdr = Image.new("RGB", (W, 70), (12, 22, 54))
+                # Long 16:9 Virtual Studio Set - Seamless Edge-to-Edge Frame
+                hdr_h = 76
+                tick_h = 76
+                content_h = H - hdr_h - tick_h  # exactly 928px
+
+                # Top Header Bar
+                hdr = Image.new("RGB", (W, hdr_h), (12, 22, 54))
                 h_draw = ImageDraw.Draw(hdr)
-                h_draw.ellipse([26, 26, 42, 42], fill=(235, 20, 36))
-                h_draw.text((50, 20), f"{CHANNEL_NAME} WORLDWIDE LIVE  |  {TAGLINE}", font=_get_font(22, bold=True), fill=(255, 215, 0))
+                h_draw.ellipse([26, 28, 46, 48], fill=(255, 255, 255))
+                h_draw.ellipse([29, 31, 43, 45], fill=(235, 20, 36))
+                h_draw.text((56, 24), f"{CHANNEL_NAME} WORLDWIDE LIVE  |  {TAGLINE}", font=_get_font(24, bold=True), fill=(255, 215, 0))
                 clock_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
-                h_draw.text((W - 190, 20), clock_str, font=_get_font(20, bold=True), fill=(255, 255, 255))
+                h_draw.text((W - 190, 24), clock_str, font=_get_font(22, bold=True), fill=(255, 255, 255))
                 frame_img.paste(hdr, (0, 0))
 
-                if anc_frame: frame_img.paste(anc_frame, (20, 90))
-                frame_img.paste(story_card.resize((1100, 740), Image.Resampling.LANCZOS), (790, 110))
-                if logo_img: frame_img.paste(logo_img, (30, H - 280), logo_img)
+                # Left Anchor Frame (760x928)
+                if anc_frame: frame_img.paste(anc_frame, (0, hdr_h))
 
-                tick_bar = Image.new("RGB", (W, 76), (185, 14, 28))
+                # Right Story Frame (1160x928 - Edge to Edge, Zero Gaps!)
+                frame_img.paste(story_card.resize((1160, content_h), Image.Resampling.LANCZOS), (760, hdr_h))
+
+                # Studio Divider Line between Anchor and Story Screen
+                s_draw = ImageDraw.Draw(frame_img)
+                s_draw.line([(760, hdr_h), (760, H - tick_h)], fill=(255, 215, 0), width=4)
+                s_draw.line([(758, hdr_h), (758, H - tick_h)], fill=(220, 20, 36), width=2)
+
+                # Logo watermark
+                if logo_img: frame_img.paste(logo_img, (24, H - 280), logo_img)
+
+                # Bottom Ticker Bar
+                tick_bar = Image.new("RGB", (W, tick_h), (185, 14, 28))
                 t_draw = ImageDraw.Draw(tick_bar)
-                t_draw.text((180 - (global_frame * 6) % max(1, len(ticker_text) * 16), 24), ticker_text + ticker_text, font=_get_font(24, bold=True), fill=(255, 255, 255))
-                t_draw.rectangle([0, 0, 170, 76], fill=(240, 185, 0))
-                t_draw.text((16, 24), "🔴 WORLD NEWS", font=_get_font(20, bold=True), fill=(0, 0, 0))
-                frame_img.paste(tick_bar, (0, H - 76))
+                t_draw.text((210 - (global_frame * 6) % max(1, len(ticker_text) * 16), 24), ticker_text + ticker_text, font=_get_font(24, bold=True), fill=(255, 255, 255))
+                t_draw.rectangle([0, 0, 190, tick_h], fill=(240, 185, 0))
+                t_draw.ellipse([24, 30, 38, 44], fill=(210, 16, 30))
+                t_draw.text((46, 26), "BREAKING", font=_get_font(22, bold=True), fill=(0, 0, 0))
+                frame_img.paste(tick_bar, (0, H - tick_h))
 
             proc.stdin.write(frame_img.tobytes())
             global_frame += 1
@@ -699,7 +727,7 @@ def generate_broadcast_thumbnail(headline, photo_path, output_path, gender="fema
     draw.rectangle([20, TH - 224, TW - 20, TH - 218], fill=(255, 215, 0))
 
     clean_hl = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', headline or '', flags=re.IGNORECASE).strip()
-    clean_hl = re.sub(r'\s*-\s*[^-]+$', '', clean_hl).strip()
+    clean_hl = re.sub(r'\s*-\s*(BBC News|Reuters|AP|CNN|The Guardian|The New York Times|Al Jazeera|NDTV|Times of India|AFP|Bloomberg).*$', '', clean_hl, flags=re.IGNORECASE).strip()
     clean_hl = clean_hl.upper()
 
     lines = wrap_text_to_width(draw, clean_hl, _get_font(42, bold=True), TW - 80, max_lines=2)
@@ -830,7 +858,7 @@ def produce_news_episode(category="WORLD", is_short=True, edition="auto", anchor
     gender = anchor_gender or ("female" if random.random() < 0.5 else "male")
 
     lead_t = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', headlines[0]["title"], flags=re.IGNORECASE).strip() if headlines else "Global Strategic Developments"
-    lead_t = re.sub(r'\s*-\s*[^-]+$', '', lead_t).strip()
+    lead_t = re.sub(r'\s*-\s*(BBC News|Reuters|AP|CNN|The Guardian|The New York Times|Al Jazeera|NDTV|Times of India|AFP|Bloomberg).*$', '', lead_t, flags=re.IGNORECASE).strip()
     lead_short = lead_t[:45].strip() + ("..." if len(lead_t) > 45 else "")
 
     if is_short:
@@ -886,7 +914,7 @@ def produce_news_episode(category="WORLD", is_short=True, edition="auto", anchor
         bulletin_tag = "WORLD 5" if is_short else cfg["bulletin_label"]
 
         clean_title = re.sub(r'^(BREAKING|EXPLAINER|ANALYSIS|WATCH|UPDATE|EXCLUSIVE|PHOTOS?|VIDEO)\s*[:|-]\s*', '', h["title"], flags=re.IGNORECASE).strip()
-        clean_title = re.sub(r'\s*-\s*[^-]+$', '', clean_title).strip()
+        clean_title = re.sub(r'\s*-\s*(BBC News|Reuters|AP|CNN|The Guardian|The New York Times|Al Jazeera|NDTV|Times of India|AFP|Bloomberg).*$', '', clean_title, flags=re.IGNORECASE).strip()
 
         download_scene_image(img_p, prompt=clean_title, rss_url=h.get("media_url", ""), article_url=h.get("article_url", ""), headline=clean_title, counter=counter, category=h.get("category_tag", "WORLD"), location=h.get("location_tag", "GLOBAL DESK"), bulletin=bulletin_tag, is_short=is_short, scene_idx=idx)
         if idx == 0 and os.path.exists(img_p): lead_photo = img_p
