@@ -1,96 +1,32 @@
-name: 24/7 Autonomous International AI News Channel (Nexora News)
+name: 24/7 International AI News Channel (Nexora News)
 
 on:
   schedule:
     # 3 Worldwide Viral Peak Broadcasts (UTC time):
-    # 06:30 UTC = 12:00 PM IST | 06:30 AM GMT (Europe Morning Briefing)
-    # 13:30 UTC = 07:00 PM IST | 08:30 AM EST (US Morning Commute & Europe Lunch - Peak Viral Slot)
-    # 21:30 UTC = 03:00 AM IST | 04:30 PM EST (US Evening Prime Time Wrap)
+    # 06:30 UTC = 12:00 PM IST (Europe Morning)
+    # 13:30 UTC = 07:00 PM IST (US Morning / Europe Lunch - Peak Slot)
+    # 21:30 UTC = 03:00 AM IST (US Prime Time)
     - cron: '30 6,13,21 * * *'
   workflow_dispatch:
-    inputs:
-      video_type:
-        description: 'Video format (both, short, long)'
-        required: false
-        default: 'both'
-      category:
-        description: 'News Category (WORLD, DEFENSE, TECHNOLOGY)'
-        required: false
-        default: 'WORLD'
-      edition:
-        description: 'Broadcast Edition (auto, morning, afternoon, evening)'
-        required: false
-        default: 'auto'
-
-permissions:
-  contents: write
 
 jobs:
-  broadcast_news:
+  broadcast:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Setup FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v3
-        with:
-          ffmpeg-version: release
-
-      - name: Setup International Broadcast Fonts
-        timeout-minutes: 2
+      - uses: FedericoCarboni/setup-ffmpeg@v3
+      - name: Install Dependencies
         run: |
-          mkdir -p assets/fonts
-          sudo apt-get update -y || true
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation fonts-noto-core || true
-
-      - name: Install Python Dependencies
-        timeout-minutes: 5
-        run: |
-          python -m pip install --upgrade pip
-          pip install edge-tts gTTS requests Pillow numpy google-genai google-api-python-client google-auth-oauthlib google-auth-httplib2
-
-      - name: Verify YouTube OAuth Connection
-        env:
-          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-        run: |
-          python main.py --check-youtube || true
-
-      - name: Generate & Upload Live International News to YouTube
+          sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-liberation
+          pip install -r requirements.txt
+      - name: Generate & Broadcast News
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
-          python main.py --once --type "${{ github.event.inputs.video_type || 'both' }}" --category "${{ github.event.inputs.category || 'WORLD' }}" --edition "${{ github.event.inputs.edition || 'auto' }}"
-
-      - name: Save & Commit Audience Analytics Feedback Loop
-        if: always()
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "Nexora Analytics Engine"
-          git add assets/topic_analytics.json || true
-          git diff --staged --quiet || (git commit -m "Auto-update YouTube global topic analytics [skip ci]" && git push) || true
-
-      - name: Upload Generated Videos as Downloadable Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-international-videos
-          path: |
-            output/*.mp4
-            output/YOUTUBE_UPLOAD_REPORT.txt
-            final_short.mp4
-            final_long.mp4
-          if-no-files-found: warn
-          retention-days: 7
+          python3 main.py --once --type both
