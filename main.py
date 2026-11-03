@@ -30,12 +30,20 @@ LOGO_PATH = os.path.join("assets", "channel_logo.png")
 STUDIO_BG_PATH = os.path.join("assets", "studio_background.jpg")
 
 GLOBAL_TOPICS = {
-    "GEOPOLITICS": ["united nations", "white house", "biden", "trump", "putin", "kremlin", "nato", "eu", "diplomacy", "summit", "sanctions", "china", "taiwan"],
-    "DEFENSE_SECURITY": ["military", "pentagon", "defense", "missile", "navy", "warship", "fighter jet", "aircraft carrier", "army", "conflict", "security"],
-    "GLOBAL_ECONOMY": ["federal reserve", "central bank", "inflation", "oil", "trade", "tariffs", "wall street", "stock market", "imf", "dollar", "gdp"],
-    "WORLD_TECH_AI": ["artificial intelligence", "nasa", "spacex", "satellite", "semiconductor", "chip", "quantum", "cyber", "robotics", "tech"],
-    "CLIMATE_CRISIS": ["climate", "summit", "green energy", "cop", "wildfire", "hurricane", "renewable", "earthquake", "environment"]
+    "DEFENSE & SECURITY": ["military", "pentagon", "defense", "missile", "navy", "warship", "fighter jet", "aircraft carrier", "army", "conflict", "troops", "soldiers", "ukraine", "nato"],
+    "GEOPOLITICS": ["united nations", "white house", "biden", "trump", "putin", "kremlin", "diplomacy", "summit", "sanctions", "china", "taiwan", "election", "venezuela"],
+    "GLOBAL ECONOMY": ["federal reserve", "central bank", "inflation", "oil", "trade", "tariffs", "wall street", "stock market", "imf", "dollar", "gdp", "airfares", "ryanair"],
+    "TECH & CYBER": ["artificial intelligence", "nasa", "spacex", "satellite", "semiconductor", "chip", "quantum", "cyber", "cyber-attacks", "robotics", "tech", "data center", "hack"],
+    "DISASTER & SAFETY": ["crash", "helicopter", "accident", "plane", "jet", "collide", "fire", "emergency", "dead", "died", "killed", "rescue"],
+    "WORLD SPORTS": ["striker", "football", "soccer", "match", "league", "collision", "player", "olympic", "fifa", "stadium"],
+    "CLIMATE & PLANET": ["climate", "green energy", "cop", "wildfire", "hurricane", "renewable", "earthquake", "environment"]
 }
+
+def classify_headline_topic(headline):
+    hl = headline.lower()
+    for topic, kws in GLOBAL_TOPICS.items():
+        if any(k in hl for k in kws): return topic
+    return "WORLD NEWS"
 
 ENTITY_MAP_INTL = [
     (["binance", "crypto", "hack", "bitcoin", "blockchain"], "digital cryptocurrency blockchain server data center security tech"),
@@ -93,12 +101,6 @@ def wrap_text_to_width(text, font, max_width, max_lines=4):
             if len(lines) >= max_lines: break
     if cur and len(lines) < max_lines: lines.append(" ".join(cur))
     return lines
-
-def classify_headline_topic(headline):
-    hl = headline.lower()
-    for topic, kws in GLOBAL_TOPICS.items():
-        if any(k in hl for k in kws): return topic
-    return "GEOPOLITICS"
 
 def load_topic_analytics():
     if os.path.exists(TOPIC_ANALYTICS_FILE):
@@ -194,20 +196,84 @@ def create_broadcast_story_card(headline, category, base_img=None, target_w=1080
     card.paste(overlay, (0, 0), overlay)
 
     draw = ImageDraw.Draw(card)
-    badge_w, badge_h = 240, 44
+    clean_cat = category.replace("_", " ").upper()
+    badge_w, badge_h = max(240, len(clean_cat) * 14 + 40), 44
     draw.rectangle([36, 36, 36 + badge_w, 36 + badge_h], fill=(185, 14, 28))
     draw.rectangle([36 + badge_w, 36, 36 + badge_w + 6, 36 + badge_h], fill=(255, 215, 0))
-    draw.text((50, 46), f"● {category.upper()}", font=_get_font(22, bold=True), fill=(255, 255, 255))
+    draw.text((50, 46), f"● {clean_cat}", font=_get_font(22, bold=True), fill=(255, 255, 255))
 
+    # Solid Dark Glass Lower-Third Plate for 100% readability on any photo (including white snow)
     f_size = 38 if target_w >= 1000 else 28
     font_hl = _get_font(f_size, bold=True)
-    wrapped = wrap_text_to_width(headline, font_hl, target_w - 90, max_lines=3)
-    y_text = target_h - (len(wrapped) * (f_size + 10)) - 50
+    wrapped = wrap_text_to_width(headline, font_hl, target_w - 100, max_lines=3)
+    box_h = (len(wrapped) * (f_size + 12)) + 36
+    box_y = target_h - box_h - 24
+
+    glass_plate = Image.new("RGBA", (target_w - 48, box_h), (8, 14, 32, 220))
+    gdraw = ImageDraw.Draw(glass_plate)
+    gdraw.rectangle([0, 0, 6, box_h], fill=(185, 14, 28, 255))
+    card.paste(glass_plate, (24, box_y), glass_plate)
+
+    draw = ImageDraw.Draw(card)
+    y_text = box_y + 18
     for line in wrapped:
-        draw.text((46, y_text + 2), line, font=font_hl, fill=(0, 0, 0))
-        draw.text((44, y_text), line, font=font_hl, fill=(255, 255, 255))
-        y_text += f_size + 10
+        draw.text((50, y_text + 2), line, font=font_hl, fill=(0, 0, 0))
+        draw.text((48, y_text), line, font=font_hl, fill=(255, 255, 255))
+        y_text += f_size + 12
     return card
+
+def create_broadcast_outro_card(output_path="temp/card_outro.jpg", target_w=1160, target_h=928, studio_bg_path="assets/studio_background.jpg", is_short=False):
+    card = Image.new("RGB", (target_w, target_h), (10, 16, 36))
+    if os.path.exists(studio_bg_path):
+        try:
+            bg = Image.open(studio_bg_path).convert("RGB")
+            bw, bh = bg.size
+            scale = max(target_w / bw, target_h / bh)
+            nw, nh = int(bw * scale), int(bh * scale)
+            res = bg.resize((nw, nh), Image.Resampling.LANCZOS)
+            cx, cy = (nw - target_w) // 2, (nh - target_h) // 2
+            card.paste(res.crop((cx, cy, cx + target_w, cy + target_h)), (0, 0))
+        except Exception: pass
+        
+    overlay = Image.new("RGBA", (target_w, target_h), (8, 14, 32, 215))
+    card.paste(overlay, (0, 0), overlay)
+    draw = ImageDraw.Draw(card)
+    
+    badge_w, badge_h = 320, 44
+    draw.rectangle([36, 36, 36 + badge_w, 36 + badge_h], fill=(185, 14, 28))
+    draw.rectangle([36 + badge_w, 36, 36 + badge_w + 6, 36 + badge_h], fill=(255, 215, 0))
+    draw.text((50, 46), f"● {CHANNEL_NAME} NETWORK", font=_get_font(22, bold=True), fill=(255, 255, 255))
+    
+    pad = 40
+    box_w = target_w - (pad * 2)
+    box_h = target_h - 180 if not is_short else target_h - 140
+    box = Image.new("RGBA", (box_w, box_h), (12, 22, 54, 235))
+    bd = ImageDraw.Draw(box)
+    bd.rectangle([0, 0, box_w, box_h], outline=(255, 215, 0), width=2)
+    
+    f_title = _get_font(42 if target_w >= 1000 else 32, bold=True)
+    bd.text((36, 36), "STAY INFORMED. STAY AHEAD.", font=f_title, fill=(255, 255, 255))
+    
+    btn_y = 110 if not is_short else 90
+    btn_h = 76 if not is_short else 64
+    bd.rectangle([36, btn_y, box_w - 36, btn_y + btn_h], fill=(185, 14, 28))
+    bd.rectangle([box_w - 42, btn_y, box_w - 36, btn_y + btn_h], fill=(255, 215, 0))
+    f_btn = _get_font(26 if target_w >= 1000 else 22, bold=True)
+    cta_text = "★  LIKE   •   SUBSCRIBE   •   COMMENT   •   SHARE  ★"
+    bd.text((50, btn_y + (btn_h - 26)//2), cta_text, font=f_btn, fill=(255, 255, 255))
+    
+    f_sub = _get_font(24 if target_w >= 1000 else 20, bold=True)
+    f_sub_reg = _get_font(22 if target_w >= 1000 else 18)
+    line1_y = btn_y + btn_h + 30
+    bd.text((36, line1_y), "What are your thoughts on today's stories?", font=f_sub, fill=(255, 215, 0))
+    bd.text((36, line1_y + 40), "Share your perspective in the comments below!", font=f_sub_reg, fill=(220, 230, 245))
+    bd.text((36, line1_y + 90), "• Turn on Notifications for 24/7 Breaking News Alerts", font=f_sub_reg, fill=(200, 220, 245))
+    bd.text((36, line1_y + 135), "Official YouTube Channel: @nexoranewsworld", font=f_sub, fill=(255, 255, 255))
+    
+    card.paste(box, (pad, 110), box)
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    card.save(output_path, quality=95)
+    return output_path
 
 def download_scene_image(scene_info, output_path, target_w=1080, target_h=830):
     img = None
@@ -261,11 +327,13 @@ class RealStudioAnchor:
                 p.wait()
             except Exception as e:
                 logger.warning(f"Failed to load anchor video: {e}")
-        if len(self.frames) >= 50:
-            fwd = self.frames[5:50]
+        # Composed, professional newsreading frames (frames 85 to 140)
+        if len(self.frames) >= 140:
+            fwd = self.frames[85:140]
             self.active_loop = fwd + fwd[::-1]
-        elif self.frames:
-            self.active_loop = self.frames + self.frames[::-1]
+        elif len(self.frames) >= 50:
+            fwd = self.frames[15:50]
+            self.active_loop = fwd + fwd[::-1]
         else:
             self.active_loop = [Image.new("RGB", (target_w, target_h), (12, 18, 36))]
 
@@ -465,13 +533,17 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 dd.line([(0, 0), (W, 0)], fill=(255, 215, 0), width=3)
                 dd.text((36, 18), f"● {sc.get('category', 'WORLD')} SPECIAL REPORT", font=_get_font(22, bold=True), fill=(255, 215, 0))
                 frame_img.paste(div_bar, (0, 934))
+                
+                # Shorts Ticker with Masking
                 tick = Image.new("RGB", (W, 80), (8, 12, 24))
                 td = ImageDraw.Draw(tick)
                 td.line([(0, 0), (W, 0)], fill=(185, 14, 28), width=3)
-                td.rectangle([0, 0, 140, 80], fill=(185, 14, 28))
-                td.text((16, 26), "LATEST", font=_get_font(22, bold=True), fill=(255, 255, 255))
-                shift = (global_frame * 5) % (len(ticker_text) * 14 + 800)
-                td.text((160 - shift, 26), ticker_text, font=_get_font(22, bold=True), fill=(240, 240, 240))
+                text_pixel_width = max(len(ticker_text) * 14, 800)
+                shift = (global_frame * 5) % text_pixel_width
+                td.text((W - shift, 26), ticker_text + "  " + ticker_text, font=_get_font(22, bold=True), fill=(240, 240, 240))
+                td.rectangle([0, 0, 150, 80], fill=(185, 14, 28))
+                td.rectangle([150, 0, 154, 80], fill=(255, 215, 0))
+                td.text((20, 26), "LATEST", font=_get_font(22, bold=True), fill=(255, 255, 255))
                 frame_img.paste(tick, (0, H - 80))
             else:
                 if anc_frame: frame_img.paste(anc_frame, (0, 76))
@@ -482,17 +554,21 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 hdr = Image.new("RGB", (W, 76), (12, 22, 54))
                 hd = ImageDraw.Draw(hdr)
                 hd.ellipse([26, 28, 46, 48], fill=(235, 20, 36))
-                hd.text((56, 24), f"{CHANNEL_NAME} WORLDWIDE", font=_get_font(26, bold=True), fill=(255, 255, 255))
-                hd.text((420, 26), "GLOBAL COVERAGE | INDEPENDENT | VERIFIED", font=_get_font(20), fill=(200, 215, 240))
+                hd.text((56, 22), f"{CHANNEL_NAME} WORLDWIDE", font=_get_font(30, bold=True), fill=(255, 255, 255))
+                hd.text((450, 26), "GLOBAL COVERAGE | INDEPENDENT | VERIFIED", font=_get_font(20), fill=(200, 215, 240))
                 hd.text((W - 180, 24), datetime.now(timezone.utc).strftime("%H:%M UTC"), font=_get_font(24, bold=True), fill=(255, 215, 0))
                 frame_img.paste(hdr, (0, 0))
+                
+                # 16:9 Long Ticker with Masking (Zero Overlap, Zero Blank Gap)
                 tick = Image.new("RGB", (W, 76), (8, 12, 24))
                 td = ImageDraw.Draw(tick)
                 td.line([(0, 0), (W, 0)], fill=(185, 14, 28), width=3)
-                td.rectangle([0, 0, 180, 76], fill=(185, 14, 28))
-                td.text((24, 24), "BREAKING", font=_get_font(24, bold=True), fill=(255, 255, 255))
-                shift = (global_frame * 6) % (len(ticker_text) * 16 + 1200)
-                td.text((200 - shift, 24), ticker_text, font=_get_font(24, bold=True), fill=(245, 245, 245))
+                text_pixel_width = max(len(ticker_text) * 16, 1000)
+                shift = (global_frame * 6) % text_pixel_width
+                td.text((W - shift, 24), ticker_text + "  " + ticker_text, font=_get_font(24, bold=True), fill=(245, 245, 245))
+                td.rectangle([0, 0, 190, 76], fill=(185, 14, 28))
+                td.rectangle([190, 0, 194, 76], fill=(255, 215, 0))
+                td.text((26, 24), "BREAKING", font=_get_font(24, bold=True), fill=(255, 255, 255))
                 frame_img.paste(tick, (0, H - 76))
 
             proc.stdin.write(frame_img.tobytes())
@@ -674,12 +750,31 @@ def produce_news_episode(video_type="both", category="WORLD", edition="auto", an
         dur = _get_audio_duration(aud_path)
         scene_assets.append({"headline": st["headline"], "category": st["category"], "image_path": card_path, "audio_path": aud_path, "duration": dur})
 
+    # Outro Call-To-Action (Like, Subscribe, Comment) Anchor Scene
+    outro_spoken = (
+        f"That concludes this edition of {CHANNEL_NAME}. For 24/7 verified global coverage, don't forget to like this video, subscribe to the channel, and share your thoughts in the comments below. Thank you for watching, and stay safe."
+        if video_type != "short"
+        else f"Stay ahead with {CHANNEL_NAME}! Don't forget to like, subscribe, and share your thoughts in the comments below."
+    )
+    outro_card_path = "temp/card_outro.jpg"
+    create_broadcast_outro_card(output_path=outro_card_path, target_w=card_w, target_h=card_h, studio_bg_path=STUDIO_BG_PATH, is_short=(video_type == "short"))
+    outro_aud_path = "temp/voice_outro.mp3"
+    synthesize_broadcast_voice(outro_spoken, outro_aud_path, gender=anchor_gender)
+    outro_dur = _get_audio_duration(outro_aud_path)
+    scene_assets.append({
+        "headline": "LIKE & SUBSCRIBE TO NEXORA NEWS",
+        "category": "NETWORK",
+        "image_path": outro_card_path,
+        "audio_path": outro_aud_path,
+        "duration": outro_dur
+    })
+
     script_data = {"anchor_gender": anchor_gender}
     lead_headline = stories[0]["headline"]
 
     if video_type in ("both", "short"):
         short_out = "output/NEXORA_NEWS_SHORT.mp4"
-        build_news_video(script_data, scene_assets[:2], short_out, is_short=True)
+        build_news_video(script_data, scene_assets[:3], short_out, is_short=True)
         if not skip_upload:
             v_title, v_desc, v_tags = generate_viral_metadata(stories[0], ed_title, is_short=True)
             upload_to_youtube(short_out, v_title, v_desc, v_tags, is_short=True)
