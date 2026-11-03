@@ -327,17 +327,30 @@ class RealStudioAnchor:
                 p.wait()
             except Exception as e:
                 logger.warning(f"Failed to load anchor video: {e}")
-        # Composed, professional newsreading frames (frames 85 to 140)
-        if len(self.frames) >= 140:
+                
+        is_male_vid = "male" in str(video_path).lower() or "1000124448" in str(video_path)
+        if is_male_vid and len(self.frames) >= 65:
+            # Male Anchor: Frame 0 is composed closed-mouth resting pose, frames 15-65 speaking loop
+            fwd = self.frames[15:65]
+            self.active_loop = fwd + fwd[::-1]
+            self.resting_frame = self.frames[0]
+        elif len(self.frames) >= 140:
+            # Female Anchor: Frame 140 is polite closed-mouth resting pose, frames 85-140 speaking loop
             fwd = self.frames[85:140]
             self.active_loop = fwd + fwd[::-1]
+            self.resting_frame = self.frames[140]
         elif len(self.frames) >= 50:
             fwd = self.frames[15:50]
             self.active_loop = fwd + fwd[::-1]
+            self.resting_frame = self.frames[0]
         else:
-            self.active_loop = [Image.new("RGB", (target_w, target_h), (12, 18, 36))]
+            blank = Image.new("RGB", (target_w, target_h), (12, 18, 36))
+            self.active_loop = [blank]
+            self.resting_frame = blank
 
-    def get_frame(self, idx):
+    def get_frame(self, idx, is_speaking=True):
+        if not is_speaking:
+            return self.resting_frame
         return self.active_loop[idx % len(self.active_loop)]
 
 def find_real_anchor_video(gender="female"):
@@ -453,7 +466,7 @@ def synthesize_broadcast_voice(text, output_path, gender="female"):
         gTTS(text=text, lang="en", tld="co.uk", slow=False).save(output_path)
     return output_path
 
-def create_silence_wav(duration=0.5, output_path="temp/silence.wav"):
+def create_silence_wav(duration=0.4, output_path="temp/silence.wav"):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono", "-t", str(duration), output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return output_path
@@ -485,8 +498,8 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     anchor_vid = find_real_anchor_video(script_data.get("anchor_gender", "female"))
     anchor_engine = RealStudioAnchor(anchor_vid, target_w=(1080 if is_short else 760), target_h=(842 if is_short else 928)) if anchor_vid else None
 
-    silence_pause = create_silence_wav(0.5, "temp/pause.wav")
-    silence_outro = create_silence_wav(1.2, "temp/outro.wav")
+    silence_pause = create_silence_wav(0.4, "temp/pause.wav")
+    silence_outro = create_silence_wav(0.4, "temp/outro.wav")
     concat_list = "temp/audio_concat.txt"
     with open(concat_list, "w") as f:
         for idx, sc in enumerate(scene_assets):
@@ -499,25 +512,31 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     total_dur = _get_audio_duration(merged_voice)
     bgm_path = generate_pro_broadcast_bed(total_dur)
 
+    # Mastered Broadcast Audio Filter Chain (-13 LUFS Loudness, +1.5dB Treble, Ducking Weights, -shortest)
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
         "-i", merged_voice, "-i", bgm_path,
         "-filter_complex", "[1:a]highpass=f=75,treble=g=1.5:f=4500,loudnorm=I=-13:LRA=7:TP=-1.0[voice];[2:a]volume=0.07[bgm];[voice][bgm]amix=inputs=2:weights=1.0 0.12:duration=first:dropout_transition=2[aout]",
         "-map", "0:v", "-map", "[aout]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", output_path
+        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", output_path
     ]
     proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
     global_frame = 0
     ticker_text = f"  ★★★  {CHANNEL_NAME} WORLDWIDE LIVE  ★★★  {TAGLINE}  ★★★  " + "  |  ".join([sc["headline"] for sc in scene_assets]) + "  ★★★  "
 
     for sc_idx, sc in enumerate(scene_assets):
-        dur = sc.get("duration", 6.0) + (1.2 if sc_idx == len(scene_assets) - 1 else 0.5)
-        n_frames = max(1, int(dur * fps))
+        speech_dur = sc.get("duration", 6.0)
+        pause_dur = 0.4 if sc_idx < len(scene_assets) - 1 else 0.4
+        speech_frames = max(1, int(speech_dur * fps))
+        pause_frames = max(1, int(pause_dur * fps))
+        total_scene_frames = speech_frames + pause_frames
         story_card = Image.open(sc["image_path"]).convert("RGB")
 
-        for f_idx in range(n_frames):
+        for f_idx in range(total_scene_frames):
+            # Only animate speaking mouth when speech is actually playing!
+            is_speaking = (f_idx < speech_frames)
             frame_img = Image.new("RGB", (W, H), (10, 16, 36))
-            anc_frame = anchor_engine.get_frame(global_frame) if anchor_engine else None
+            anc_frame = anchor_engine.get_frame(global_frame, is_speaking=is_speaking) if anchor_engine else None
 
             if is_short:
                 frame_img.paste(story_card, (0, 104))
@@ -728,8 +747,13 @@ def upload_to_youtube(video_path, title, description, tags, thumbnail_path=None,
 
 # ================= 9. EPISODE ORCHESTRATOR & CLI =================
 def produce_news_episode(video_type="both", category="WORLD", edition="auto", anchor_gender="female", skip_upload=False):
+    if anchor_gender == "auto":
+        # Dynamic TV schedule rotation: alternate by hour between Male & Female anchors
+        h = datetime.now(timezone.utc).hour
+        anchor_gender = "male" if (h % 2 == 1) else "female"
+        
     ed_title, ed_sub = get_current_edition()
-    logger.info(f"Starting {CHANNEL_NAME} Broadcast: {ed_title} [{category}]")
+    logger.info(f"Starting {CHANNEL_NAME} Broadcast: {ed_title} [{category}] | Anchor: {anchor_gender.upper()}")
     stories = fetch_trending_international_news(category=category, max_stories=5)
     if not stories:
         logger.error("No stories retrieved.")
