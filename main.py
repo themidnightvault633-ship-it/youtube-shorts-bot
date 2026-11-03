@@ -39,9 +39,9 @@ GLOBAL_TOPICS = {
 
 ENTITY_MAP_INTL = [
     (["binance", "crypto", "hack", "bitcoin", "blockchain"], "digital cryptocurrency blockchain server data center security tech"),
-    (["jet", "crash", "aviation", "airplane", "flight"], "emergency rescue services fire response aviation transport incident"),
+    (["jet", "crash", "aviation", "airplane", "flight", "ryanair", "airline", "airfares"], "international commercial airport airplane runway terminal aviation transport incident"),
     (["police", "investigation", "emergency", "crime"], "police vehicle emergency blue lights investigation scene international"),
-    (["gaza", "israel", "strike", "middle east", "lebanon"], "Middle East building damage smoke emergency rescue operation"),
+    (["gaza", "israel", "strike", "middle east", "lebanon", "iran"], "Middle East building damage smoke emergency rescue operation"),
     (["protest", "protests", "demonstration", "crowd"], "protesters in European city streets banners demonstration police crowd"),
     (["court", "judge", "lawsuit", "legal"], "Federal court building justice legal courtroom exterior"),
     (["white house", "president", "biden", "trump", "washington"], "White House Washington DC press briefing President United States"),
@@ -179,7 +179,6 @@ def create_broadcast_story_card(headline, category, base_img=None, target_w=1280
 
     overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
     odraw = ImageDraw.Draw(overlay)
-    # Vignette and bottom news title gradient
     for y in range(target_h):
         if y > int(target_h * 0.45):
             alpha = int(240 * ((y - int(target_h * 0.45)) / (target_h * 0.55)))
@@ -187,13 +186,11 @@ def create_broadcast_story_card(headline, category, base_img=None, target_w=1280
     card.paste(overlay, (0, 0), overlay)
 
     draw = ImageDraw.Draw(card)
-    # Top Category Badge
     badge_w, badge_h = 240, 44
     draw.rectangle([36, 36, 36 + badge_w, 36 + badge_h], fill=(185, 14, 28))
     draw.rectangle([36 + badge_w, 36, 36 + badge_w + 6, 36 + badge_h], fill=(255, 215, 0))
     draw.text((50, 46), f"● {category.upper()}", font=_get_font(22, bold=True), fill=(255, 255, 255))
 
-    # Headline typography
     f_size = 38 if target_w >= 1000 else 28
     font_hl = _get_font(f_size, bold=True)
     wrapped = wrap_text_to_width(headline, font_hl, target_w - 90, max_lines=3)
@@ -239,19 +236,15 @@ class RealStudioAnchor:
         self.frames = []
         if os.path.exists(video_path):
             try:
-                cmd = ["ffmpeg", "-i", video_path, "-f", "image2pipe", "-pix_fmt", "rgb24", "-vcodec", "rawvideo", "-"]
+                # Direct FFmpeg scale and crop prevents rawvideo stride mismatch & scanline distortion
+                vf = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h}"
+                cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", vf, "-f", "image2pipe", "-pix_fmt", "rgb24", "-vcodec", "rawvideo", "-"]
                 p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-                w, h = 1344, 768
+                frame_bytes = target_w * target_h * 3
                 while True:
-                    raw = p.stdout.read(w * h * 3)
-                    if not raw or len(raw) < w * h * 3: break
-                    im = Image.frombytes("RGB", (w, h), raw)
-                    # Crop and fit anchor to target box
-                    scale = max(target_w / w, target_h / h)
-                    nw, nh = int(w * scale), int(h * scale)
-                    res = im.resize((nw, nh), Image.Resampling.LANCZOS)
-                    cx, cy = (nw - target_w) // 2, (nh - target_h) // 2
-                    self.frames.append(res.crop((cx, cy, cx + target_w, cy + target_h)))
+                    raw = p.stdout.read(frame_bytes)
+                    if not raw or len(raw) < frame_bytes: break
+                    self.frames.append(Image.frombytes("RGB", (target_w, target_h), raw))
                 p.wait()
             except Exception as e:
                 logger.warning(f"Failed to load anchor video: {e}")
@@ -282,7 +275,6 @@ def _extract_rss_image(entry):
     for th in entry.findall(".//{http://search.yahoo.com/mrss/}thumbnail") + entry.findall(".//media:thumbnail", {"media": "http://search.yahoo.com/mrss/"}):
         u = th.attrib.get("url", "")
         if u:
-            # Upgrade BBC 240p thumbnails to 1024p HD
             if "bbci.co.uk" in u or "bbc.com" in u:
                 u = re.sub(r'/news/\d+/', '/news/1024/', u)
             return u
@@ -294,7 +286,6 @@ def _extract_rss_image(entry):
 def _clean_summary(raw):
     t = re.sub(r"<[^>]+>", "", raw or "").strip()
     t = re.sub(r"\s+", " ", t)
-    # Strip only wire source attribution at the end
     t = re.sub(r"\s*-\s*(BBC News|Reuters|The Guardian|AP|Associated Press|Al Jazeera|CNN)$", "", t, flags=re.IGNORECASE)
     return t
 
@@ -364,7 +355,6 @@ Stories:
 
 def synthesize_broadcast_voice(text, output_path, gender="female"):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    # High-clarity neural broadcast voices
     voice = "en-GB-SoniaNeural" if gender.lower() == "female" else "en-GB-RyanNeural"
     cmd = ["edge-tts", "--voice", voice, "--text", text, "--write-media", output_path]
     res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -387,7 +377,6 @@ def _get_audio_duration(path):
 
 def generate_pro_broadcast_bed(duration, output_path="temp/broadcast_bed.wav"):
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    # 120-BPM subtle rhythmic television news pulse (sub-bass kick, tick, and warm pad)
     filter_expr = (
         f"aevalsrc=sin(2*PI*58*t)*exp(-3*mod(t\\,0.5))"
         f"+0.08*sin(2*PI*1200*t)*exp(-30*mod(t\\,0.5))"
@@ -420,7 +409,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     total_dur = _get_audio_duration(merged_voice)
     bgm_path = generate_pro_broadcast_bed(total_dur)
 
-    # Mastered Broadcast Audio Filter Chain (-13 LUFS Loudness, +1.5dB Treble, Ducking Weights)
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
         "-i", merged_voice, "-i", bgm_path,
@@ -442,23 +430,19 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
             anc_frame = anchor_engine.get_frame(global_frame) if anchor_engine else None
 
             if is_short:
-                # 9:16 Shorts Split-Screen Layout (zero black gaps)
                 frame_img.paste(story_card.resize((W, 830), Image.Resampling.LANCZOS), (0, 104))
                 if anc_frame: frame_img.paste(anc_frame, (0, 998))
-                # Top Header
                 top_bar = Image.new("RGB", (W, 104), (185, 14, 28))
                 tb_draw = ImageDraw.Draw(top_bar)
                 tb_draw.ellipse([24, 38, 44, 58], fill=(255, 255, 255))
                 tb_draw.text((54, 34), f"{CHANNEL_NAME}  |  GLOBAL LIVE", font=_get_font(28, bold=True), fill=(255, 255, 255))
                 tb_draw.text((W - 170, 36), datetime.now(timezone.utc).strftime("%H:%M UTC"), font=_get_font(26, bold=True), fill=(255, 215, 0))
                 frame_img.paste(top_bar, (0, 0))
-                # Accent Divider
                 div_bar = Image.new("RGB", (W, 64), (12, 22, 54))
                 dd = ImageDraw.Draw(div_bar)
                 dd.line([(0, 0), (W, 0)], fill=(255, 215, 0), width=3)
                 dd.text((36, 18), f"● {sc.get('category', 'WORLD')} SPECIAL REPORT", font=_get_font(22, bold=True), fill=(255, 215, 0))
                 frame_img.paste(div_bar, (0, 934))
-                # Bottom Ticker
                 tick = Image.new("RGB", (W, 80), (8, 12, 24))
                 td = ImageDraw.Draw(tick)
                 td.line([(0, 0), (W, 0)], fill=(185, 14, 28), width=3)
@@ -468,14 +452,11 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 td.text((160 - shift, 26), ticker_text, font=_get_font(22, bold=True), fill=(240, 240, 240))
                 frame_img.paste(tick, (0, H - 80))
             else:
-                # 16:9 Long Studio Layout (Edge-to-Edge, zero black gaps)
                 if anc_frame: frame_img.paste(anc_frame, (0, 76))
                 frame_img.paste(story_card.resize((1160, 928), Image.Resampling.LANCZOS), (760, 76))
-                # 3D Red-Gold Studio Divider Line at x=760
                 dline = ImageDraw.Draw(frame_img)
                 dline.line([(760, 76), (760, 1004)], fill=(185, 14, 28), width=4)
                 dline.line([(764, 76), (764, 1004)], fill=(255, 215, 0), width=2)
-                # Full Header Bar (1920x76)
                 hdr = Image.new("RGB", (W, 76), (12, 22, 54))
                 hd = ImageDraw.Draw(hdr)
                 hd.ellipse([26, 28, 46, 48], fill=(235, 20, 36))
@@ -483,7 +464,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 hd.text((420, 26), "GLOBAL COVERAGE | INDEPENDENT | VERIFIED", font=_get_font(20), fill=(200, 215, 240))
                 hd.text((W - 180, 24), datetime.now(timezone.utc).strftime("%H:%M UTC"), font=_get_font(24, bold=True), fill=(255, 215, 0))
                 frame_img.paste(hdr, (0, 0))
-                # Full Bottom Ticker (1920x76)
                 tick = Image.new("RGB", (W, 76), (8, 12, 24))
                 td = ImageDraw.Draw(tick)
                 td.line([(0, 0), (W, 0)], fill=(185, 14, 28), width=3)
@@ -501,7 +481,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     logger.info(f"Broadcast video rendered successfully: {output_path}")
     return output_path
 
-# ================= 8. THUMBNAIL & YOUTUBE ENGINE =================
+# ================= 8. THUMBNAIL & YOUTUBE VIRAL ENGINE =================
 def generate_broadcast_thumbnail(headline, category, base_img_path, output_path):
     card = Image.open(base_img_path).convert("RGB").resize((1280, 720), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(card)
@@ -524,6 +504,78 @@ def generate_broadcast_thumbnail(headline, category, base_img_path, output_path)
     card.save(output_path, quality=95)
     return output_path
 
+def _sanitize_title(title, is_short=False):
+    t = re.sub(r"\s+", " ", title).strip()
+    max_len = 80 if is_short else 92
+    if len(t) > max_len:
+        t = t[:max_len].rsplit(" ", 1)[0]
+    if is_short and "#Shorts" not in t:
+        t = f"{t} #Shorts"
+    return t
+
+def generate_viral_metadata(story, edition_title, is_short=False):
+    headline = story.get("headline", "").strip()
+    summary = story.get("summary", "").strip()
+    category = story.get("category", "WORLD").upper()
+
+    if GEMINI_API_KEY:
+        try:
+            from google import genai
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            prompt = f'''You are an elite YouTube growth strategist for '{CHANNEL_NAME}', a premier international TV news network like BBC World / WION / CNN.
+Create viral, high-CTR metadata for this news story:
+Headline: "{headline}"
+Summary: "{summary}"
+Category: "{category}"
+Format: {"YouTube Shorts (must be under 75 chars, dramatic hook, emojis, ending with #Shorts)" if is_short else "YouTube Long Video (must be under 88 chars, high-urgency television headline ending with | NEXORA NEWS)"}
+
+Return ONLY valid JSON format:
+{{
+  "title": "...",
+  "description": "...",
+  "tags": ["WorldNews", "BreakingNews", "LiveNews", ...]
+}}'''
+            res = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+            raw = res.text.strip()
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if m:
+                data = json.loads(m.group(0))
+                title = _sanitize_title(data.get("title", headline), is_short=is_short)
+                desc = data.get("description", summary)
+                tags = data.get("tags", ["WorldNews", "BreakingNews"])
+                return title, desc, tags[:15]
+        except Exception as e:
+            logger.warning(f"Gemini viral metadata fallback: {e}")
+
+    urgent_prefix = "BREAKING:" if any(k in headline.lower() for k in ["war", "strike", "crash", "attack", "death", "bomb", "kill"]) else "ALERT:"
+    clean_h = headline
+    for p in ["BREAKING:", "ALERT:", "WARNING:", "JUST IN:"]:
+        clean_h = clean_h.replace(p, "").strip()
+
+    if is_short:
+        base_t = f"{urgent_prefix} {clean_h}"
+        title = _sanitize_title(base_t, is_short=True)
+    else:
+        base_t = f"{urgent_prefix} {clean_h} | {CHANNEL_NAME}"
+        title = _sanitize_title(base_t, is_short=False)
+
+    tags = ["WorldNews", "BreakingNews", "LiveNews", "InternationalNews", "GlobalNews", category, "Geopolitics", "Headlines", "NexoraNews"]
+    if is_short:
+        tags.extend(["Shorts", "NewsShorts", "ViralShorts", "YouTubeShorts"])
+    words = [w.capitalize() for w in re.sub(r'[^a-zA-Z0-9\s]', '', headline).split() if len(w) > 4]
+    tags.extend(words[:5])
+
+    desc = f'''🚨 {title}
+
+GLOBAL DEVELOPMENTS:
+{summary}
+
+Stay ahead with 24/7 verified international broadcast coverage from {CHANNEL_NAME}.
+🔔 Subscribe to @Nexoranewsworld for continuous worldwide news reports.
+
+#WorldNews #BreakingNews #Shorts #{category} #LiveNews #Geopolitics #GlobalCoverage #NexoraNews'''
+    return title, desc, tags[:15]
+
 def _get_youtube_token():
     if not (YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN): return None
     try:
@@ -541,28 +593,40 @@ def upload_to_youtube(video_path, title, description, tags, thumbnail_path=None,
         logger.info("YouTube credentials not set; saved locally.")
         return None
     try:
+        safe_title = _sanitize_title(title, is_short=is_short)
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         meta = {
             "snippet": {
-                "title": f"{title} #Shorts" if is_short and "#Shorts" not in title else title,
-                "description": description,
-                "tags": tags[:15],
+                "title": safe_title,
+                "description": description[:4500],
+                "tags": [t[:30] for t in tags[:15]],
                 "categoryId": "25"
             },
             "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
         }
         res = requests.post("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", headers=headers, json=meta)
+        if res.status_code not in (200, 201):
+            logger.error(f"YouTube video init error {res.status_code}: {res.text}")
+            return None
         upload_url = res.headers.get("Location")
+        if not upload_url:
+            logger.error(f"No upload location returned: {res.text}")
+            return None
         with open(video_path, "rb") as f:
             v_res = requests.put(upload_url, headers={"Authorization": f"Bearer {token}", "Content-Type": "video/mp4"}, data=f)
+        if v_res.status_code not in (200, 201):
+            logger.error(f"YouTube binary upload error {v_res.status_code}: {v_res.text}")
+            return None
         vid_id = v_res.json().get("id")
         if vid_id and thumbnail_path and os.path.exists(thumbnail_path):
             with open(thumbnail_path, "rb") as tf:
-                requests.post(f"https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={vid_id}", headers={"Authorization": f"Bearer {token}", "Content-Type": "image/jpeg"}, data=tf)
-        logger.info(f"Successfully uploaded to YouTube: https://youtu.be/{vid_id}")
+                t_res = requests.post(f"https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={vid_id}", headers={"Authorization": f"Bearer {token}", "Content-Type": "image/jpeg"}, data=tf)
+                if t_res.status_code in (200, 201): logger.info("Custom thumbnail uploaded successfully.")
+        logger.info(f"Successfully uploaded to YouTube: https://youtu.be/{vid_id} (Title: {safe_title})")
         return vid_id
-    except Exception as e: logger.error(f"YouTube upload error: {e}")
-    return None
+    except Exception as e:
+        logger.error(f"YouTube upload error: {e}")
+        return None
 
 # ================= 9. EPISODE ORCHESTRATOR & CLI =================
 def produce_news_episode(video_type="both", category="WORLD", edition="auto", anchor_gender="female", skip_upload=False):
@@ -594,7 +658,8 @@ def produce_news_episode(video_type="both", category="WORLD", edition="auto", an
         short_out = "output/NEXORA_NEWS_SHORT.mp4"
         build_news_video(script_data, scene_assets[:2], short_out, is_short=True)
         if not skip_upload:
-            upload_to_youtube(short_out, f"{lead_headline} | {CHANNEL_NAME} LIVE", f"24/7 Global Live Coverage.\n\n#News #BreakingNews #WorldNews #Shorts", ["News", "BreakingNews"], is_short=True)
+            v_title, v_desc, v_tags = generate_viral_metadata(stories[0], ed_title, is_short=True)
+            upload_to_youtube(short_out, v_title, v_desc, v_tags, is_short=True)
 
     if video_type in ("both", "long"):
         long_out = "output/NEXORA_NEWS_BROADCAST.mp4"
@@ -602,8 +667,9 @@ def produce_news_episode(video_type="both", category="WORLD", edition="auto", an
         thumb_out = "output/thumbnail.jpg"
         generate_broadcast_thumbnail(lead_headline, stories[0]["category"], scene_assets[0]["image_path"], thumb_out)
         if not skip_upload:
-            desc = f"{CHANNEL_NAME} - {ed_title}\n{TAGLINE}\n\nTop Stories:\n" + "\n".join([f"• {s['headline']}" for s in stories])
-            upload_to_youtube(long_out, f"{lead_headline} - {ed_title} | {CHANNEL_NAME}", desc, ["News", "WorldNews", "Global"], thumbnail_path=thumb_out, is_short=False)
+            v_title, v_desc, v_tags = generate_viral_metadata(stories[0], ed_title, is_short=False)
+            full_desc = f"{v_desc}\n\nBROADCAST BULLETIN STORIES:\n" + "\n".join([f"• {s['headline']}" for s in stories])
+            upload_to_youtube(long_out, v_title, full_desc, v_tags, thumbnail_path=thumb_out, is_short=False)
 
     logger.info("Broadcast generation and production complete.")
 
