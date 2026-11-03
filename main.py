@@ -41,15 +41,15 @@ ENTITY_MAP_INTL = [
     (["binance", "crypto", "hack", "bitcoin", "blockchain"], "digital cryptocurrency blockchain server data center security tech"),
     (["jet", "crash", "aviation", "airplane", "flight", "ryanair", "airline", "airfares"], "international commercial airport airplane runway terminal aviation transport incident"),
     (["police", "investigation", "emergency", "crime"], "police vehicle emergency blue lights investigation scene international"),
-    (["gaza", "israel", "strike", "middle east", "lebanon", "iran"], "Middle East building damage smoke emergency rescue operation"),
+    (["gaza", "israel", "strike", "middle east", "lebanon", "iran", "venezuela"], "government press conference flags diplomats official international summit"),
     (["protest", "protests", "demonstration", "crowd"], "protesters in European city streets banners demonstration police crowd"),
     (["court", "judge", "lawsuit", "legal"], "Federal court building justice legal courtroom exterior"),
     (["white house", "president", "biden", "trump", "washington"], "White House Washington DC press briefing President United States"),
     (["united nations", "un security council", "diplomacy"], "United Nations Security Council chamber Geneva New York diplomacy"),
     (["nato", "pentagon", "defense secretary", "allies"], "NATO headquarters summit Brussels defense ministers alliance meeting"),
-    (["aircraft carrier", "navy", "warship", "fighter jet"], "Modern aircraft carrier warship operations at sea military fighter jet launch"),
+    (["aircraft carrier", "navy", "warship", "fighter jet", "troops", "ukraine", "soldiers"], "military troops soldiers in uniform armed defense tactical operation field"),
     (["space", "nasa", "spacex", "rocket", "satellite"], "NASA rocket launch Cape Canaveral space exploration satellite deployment"),
-    (["kremlin", "russia", "putin", "moscow", "ukraine"], "Kremlin Red Square Moscow official government architecture"),
+    (["kremlin", "russia", "putin", "moscow"], "Kremlin Red Square Moscow official government architecture"),
     (["china", "beijing", "xi jinping", "taiwan"], "Great Hall of the People Beijing China official international diplomacy")
 ]
 
@@ -117,15 +117,23 @@ def get_recommended_topic():
     return random.choices(list(GLOBAL_TOPICS.keys()), weights=weights, k=1)[0]
 
 # ================= 3. GROUND PHOTO & IMAGE ENGINE =================
+def upgrade_image_url(u):
+    if not u: return ""
+    u = re.sub(r'/news/\d+/', '/news/1024/', u)
+    u = re.sub(r'/ace/standard/\d+/', '/ace/standard/1024/', u)
+    u = re.sub(r'/images/ic/\d+xn/', '/images/ic/1024xn/', u)
+    u = re.sub(r'/\d+x\d+/', '/1024x576/', u)
+    return u
+
 def _validate_image(data):
     if not data or len(data) < 2000: raise ValueError("Data too small")
     img = Image.open(BytesIO(data)).convert("RGB")
     w, h = img.size
     if w < 40 or h < 40: raise ValueError(f"Dim too small {w}x{h}")
-    # Broadcast Color Grading
-    img = ImageEnhance.Contrast(img).enhance(1.08)
-    img = ImageEnhance.Color(img).enhance(1.06)
-    img = ImageEnhance.Sharpness(img).enhance(1.08)
+    # High-Definition Broadcast Color & Sharpness Grading
+    img = ImageEnhance.Contrast(img).enhance(1.10)
+    img = ImageEnhance.Color(img).enhance(1.08)
+    img = ImageEnhance.Sharpness(img).enhance(1.25)
     return img
 
 def _fetch_article_og_image(url):
@@ -136,7 +144,7 @@ def _fetch_article_og_image(url):
             m = re.search(r'<meta[^>]+property=[\'"]og:image[\'"][^>]+content=[\'"]([^\'"]+)[\'"]', resp.text, re.IGNORECASE)
             if not m: m = re.search(r'<meta[^>]+content=[\'"]([^\'"]+)[\'"][^>]+property=[\'"]og:image[\'"]', resp.text, re.IGNORECASE)
             if m:
-                img_url = m.group(1).replace("&amp;", "&")
+                img_url = upgrade_image_url(m.group(1).replace("&amp;", "&"))
                 r2 = requests.get(img_url, headers=HEADERS, timeout=6)
                 if r2.status_code == 200: return _validate_image(r2.content)
     except Exception: pass
@@ -152,7 +160,7 @@ def _fetch_ground_news_photo(query):
             for pid, pdata in pages.items():
                 for ii in pdata.get("imageinfo", []):
                     u = ii.get("url", "")
-                    if u.lower().endswith((".jpg", ".jpeg", ".png")) and ii.get("width", 0) >= 300:
+                    if u.lower().endswith((".jpg", ".jpeg", ".png")) and ii.get("width", 0) >= 400:
                         r2 = requests.get(u, headers=HEADERS, timeout=6)
                         if r2.status_code == 200: return _validate_image(r2.content)
     except Exception: pass
@@ -167,7 +175,7 @@ def _fetch_pollinations_image(prompt, w=1280, h=720):
     except Exception: pass
     return None
 
-def create_broadcast_story_card(headline, category, base_img=None, target_w=1280, target_h=720):
+def create_broadcast_story_card(headline, category, base_img=None, target_w=1080, target_h=830):
     card = Image.new("RGB", (target_w, target_h), (12, 18, 36))
     if base_img:
         bw, bh = base_img.size
@@ -201,24 +209,30 @@ def create_broadcast_story_card(headline, category, base_img=None, target_w=1280
         y_text += f_size + 10
     return card
 
-def download_scene_image(scene_info, output_path, target_w=1280, target_h=720):
+def download_scene_image(scene_info, output_path, target_w=1080, target_h=830):
     img = None
-    u = scene_info.get("image_url", "")
-    if u and u.startswith("http"):
-        try:
-            r = requests.get(u, headers=HEADERS, timeout=6)
-            if r.status_code == 200: img = _validate_image(r.content)
-        except Exception: pass
-
-    if not img and scene_info.get("article_url"):
+    if scene_info.get("article_url"):
         img = _fetch_article_og_image(scene_info["article_url"])
 
-    if not img:
-        q = map_headline_to_search_query(scene_info["headline"])
-        img = _fetch_ground_news_photo(q)
+    if not img or (img and img.size[0] < 500):
+        u = scene_info.get("image_url", "")
+        if u and u.startswith("http"):
+            u = upgrade_image_url(u)
+            try:
+                r = requests.get(u, headers=HEADERS, timeout=6)
+                if r.status_code == 200:
+                    cand = _validate_image(r.content)
+                    if not img or cand.size[0] > img.size[0]: img = cand
+            except Exception: pass
 
-    if not img:
-        img = _fetch_pollinations_image(scene_info["headline"], w=target_w, h=target_h)
+    if not img or (img and img.size[0] < 400):
+        q = map_headline_to_search_query(scene_info["headline"])
+        cand = _fetch_ground_news_photo(q)
+        if cand: img = cand
+
+    if not img or (img and img.size[0] < 400):
+        cand = _fetch_pollinations_image(scene_info["headline"], w=target_w, h=target_h)
+        if cand: img = cand
 
     if not img and os.path.exists(STUDIO_BG_PATH):
         try: img = Image.open(STUDIO_BG_PATH).convert("RGB")
@@ -236,7 +250,6 @@ class RealStudioAnchor:
         self.frames = []
         if os.path.exists(video_path):
             try:
-                # Direct FFmpeg scale and crop prevents rawvideo stride mismatch & scanline distortion
                 vf = f"scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h}"
                 cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", vf, "-f", "image2pipe", "-pix_fmt", "rgb24", "-vcodec", "rawvideo", "-"]
                 p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -248,7 +261,6 @@ class RealStudioAnchor:
                 p.wait()
             except Exception as e:
                 logger.warning(f"Failed to load anchor video: {e}")
-        # 100% Forward-facing eye-contact loop (frames 5 to 50 + reversed ping-pong)
         if len(self.frames) >= 50:
             fwd = self.frames[5:50]
             self.active_loop = fwd + fwd[::-1]
@@ -261,13 +273,25 @@ class RealStudioAnchor:
         return self.active_loop[idx % len(self.active_loop)]
 
 def find_real_anchor_video(gender="female"):
-    candidates = [
-        f"anchor_real_{gender.lower()}.mp4",
-        "anchor_real_male.mp4" if gender.lower() == "male" else "anchor_real_female.mp4",
-        "anchor_real.mp4", "anchor_studio.mp4"
-    ]
+    if gender.lower() == "male":
+        candidates = [
+            "anchor_real_male.mp4", "anchor_real_male.mp4.mp4", "anchor_real_male..mp4", "1000124448.mp4", "male_anchor.mp4", "anchor_male.mp4",
+            os.path.join("assets", "anchor_real_male.mp4")
+        ]
+    else:
+        candidates = [
+            "anchor_real_female.mp4", "anchor_real_female.mp4.mp4", "anchor_real_female..mp4", "1000124449.mp4", "female_anchor.mp4", "anchor_female.mp4",
+            "anchor_real.mp4", os.path.join("assets", "anchor_real_female.mp4")
+        ]
     for c in candidates:
-        if os.path.exists(c): return c
+        if os.path.exists(c) and os.path.getsize(c) > 2000000:
+            logger.info(f"Loaded verified high-res anchor video: {c} ({os.path.getsize(c)} bytes)")
+            return c
+    for c in candidates:
+        if os.path.exists(c) and "pixverse" not in c.lower():
+            logger.info(f"Loaded anchor video candidate: {c}")
+            return c
+    logger.warning("No high-res anchor video found. Check if 1000124449.mp4 or anchor_real_female.mp4 is uploaded.")
     return None
 
 # ================= 5. LIVE GLOBAL RSS & STORY CURATION =================
@@ -275,12 +299,10 @@ def _extract_rss_image(entry):
     for th in entry.findall(".//{http://search.yahoo.com/mrss/}thumbnail") + entry.findall(".//media:thumbnail", {"media": "http://search.yahoo.com/mrss/"}):
         u = th.attrib.get("url", "")
         if u:
-            if "bbci.co.uk" in u or "bbc.com" in u:
-                u = re.sub(r'/news/\d+/', '/news/1024/', u)
-            return u
+            return upgrade_image_url(u)
     for enc in entry.findall("enclosure"):
         if "image" in enc.attrib.get("type", "").lower() and enc.attrib.get("url"):
-            return enc.attrib["url"]
+            return upgrade_image_url(enc.attrib["url"])
     return ""
 
 def _clean_summary(raw):
@@ -430,7 +452,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
             anc_frame = anchor_engine.get_frame(global_frame) if anchor_engine else None
 
             if is_short:
-                frame_img.paste(story_card.resize((W, 830), Image.Resampling.LANCZOS), (0, 104))
+                frame_img.paste(story_card, (0, 104))
                 if anc_frame: frame_img.paste(anc_frame, (0, 998))
                 top_bar = Image.new("RGB", (W, 104), (185, 14, 28))
                 tb_draw = ImageDraw.Draw(top_bar)
@@ -453,7 +475,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 frame_img.paste(tick, (0, H - 80))
             else:
                 if anc_frame: frame_img.paste(anc_frame, (0, 76))
-                frame_img.paste(story_card.resize((1160, 928), Image.Resampling.LANCZOS), (760, 76))
+                frame_img.paste(story_card, (760, 76))
                 dline = ImageDraw.Draw(frame_img)
                 dline.line([(760, 76), (760, 1004)], fill=(185, 14, 28), width=4)
                 dline.line([(764, 76), (764, 1004)], fill=(255, 215, 0), width=2)
@@ -642,10 +664,11 @@ def produce_news_episode(video_type="both", category="WORLD", edition="auto", an
     os.makedirs("temp", exist_ok=True)
     os.makedirs("output", exist_ok=True)
 
+    card_w, card_h = (1080, 830) if video_type == "short" else (1160, 928)
     for idx, st in enumerate(stories):
         spoken = polished[idx]["spoken_copy"] if (polished and idx < len(polished)) else humanize_english_anchor_speech(st["headline"], st["summary"], idx, len(stories), ed_title)
         card_path = f"temp/card_{idx}.jpg"
-        download_scene_image(st, card_path, target_w=1280, target_h=720)
+        download_scene_image(st, card_path, target_w=card_w, target_h=card_h)
         aud_path = f"temp/voice_{idx}.mp3"
         synthesize_broadcast_voice(spoken, aud_path, gender=anchor_gender)
         dur = _get_audio_duration(aud_path)
