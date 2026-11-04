@@ -1,13 +1,10 @@
-name: 24/7 International AI News Channel (Nexora News)
+name: 24/7 Real-Time Breaking News Engine (Nexora News)
 
 on:
   schedule:
-    # 3 Worldwide Viral Peak Broadcasts (UTC time):
-    # 06:30 UTC = 12:00 PM IST (Europe Morning)
-    # 13:30 UTC = 07:00 PM IST (US Morning / Europe Lunch - Peak Slot)
-    # 21:30 UTC = 03:00 AM IST (US Prime Time)
-    - cron: '30 6,13,21 * * *'
-  workflow_dispatch:
+    # Har 30 minute me automatic scan karega
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Kabhi bhi man chahe 1-click me run karne ke liye
 
 jobs:
   broadcast:
@@ -22,11 +19,11 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-liberation
           pip install -r requirements.txt
-      - name: Generate & Broadcast News
+      - name: Scan & Broadcast Breaking News
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
-          python3 main.py --once --type both
+          python3 main.py --breaking-check --type both
