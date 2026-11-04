@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 NEXORA NEWS - 24/7 Autonomous International Broadcast Engine
-High-definition automated video news channel with real anchor video looping,
-1024p CDN photojournalism, 120-BPM heartbeat audio bed, and EBU R128 audio mastering.
+Fixed: Long Video Content-Length headers, Priority Upload, Robust YouTube Error Handling,
+Real Anchor Loop with Closed-Mouth Resting Pose, and 1024p CDN Photojournalism.
 """
 import os, sys, re, glob, json, time, math, random, asyncio, logging, argparse, subprocess, urllib.parse, wave
 import xml.etree.ElementTree as ET
@@ -102,22 +102,6 @@ def wrap_text_to_width(text, font, max_width, max_lines=4):
     if cur and len(lines) < max_lines: lines.append(" ".join(cur))
     return lines
 
-def load_topic_analytics():
-    if os.path.exists(TOPIC_ANALYTICS_FILE):
-        try:
-            with open(TOPIC_ANALYTICS_FILE, "r") as f: return json.load(f)
-        except Exception: pass
-    return {k: {"views": 1000, "videos": 1} for k in GLOBAL_TOPICS}
-
-def save_topic_analytics(stats):
-    os.makedirs(os.path.dirname(os.path.abspath(TOPIC_ANALYTICS_FILE)), exist_ok=True)
-    with open(TOPIC_ANALYTICS_FILE, "w") as f: json.dump(stats, f, indent=2)
-
-def get_recommended_topic():
-    stats = load_topic_analytics()
-    weights = [max(1, stats.get(t, {}).get("views", 1000)) for t in GLOBAL_TOPICS]
-    return random.choices(list(GLOBAL_TOPICS.keys()), weights=weights, k=1)[0]
-
 # ================= 3. GROUND PHOTO & IMAGE ENGINE =================
 def upgrade_image_url(u):
     if not u: return ""
@@ -132,7 +116,6 @@ def _validate_image(data):
     img = Image.open(BytesIO(data)).convert("RGB")
     w, h = img.size
     if w < 40 or h < 40: raise ValueError(f"Dim too small {w}x{h}")
-    # High-Definition Broadcast Color & Sharpness Grading
     img = ImageEnhance.Contrast(img).enhance(1.10)
     img = ImageEnhance.Color(img).enhance(1.08)
     img = ImageEnhance.Sharpness(img).enhance(1.25)
@@ -202,7 +185,6 @@ def create_broadcast_story_card(headline, category, base_img=None, target_w=1080
     draw.rectangle([36 + badge_w, 36, 36 + badge_w + 6, 36 + badge_h], fill=(255, 215, 0))
     draw.text((50, 46), f"● {clean_cat}", font=_get_font(22, bold=True), fill=(255, 255, 255))
 
-    # Solid Dark Glass Lower-Third Plate for 100% readability on any photo (including white snow)
     f_size = 38 if target_w >= 1000 else 28
     font_hl = _get_font(f_size, bold=True)
     wrapped = wrap_text_to_width(headline, font_hl, target_w - 100, max_lines=3)
@@ -330,12 +312,10 @@ class RealStudioAnchor:
                 
         is_male_vid = "male" in str(video_path).lower() or "1000124448" in str(video_path)
         if is_male_vid and len(self.frames) >= 65:
-            # Male Anchor: Frame 0 is composed closed-mouth resting pose, frames 15-65 speaking loop
             fwd = self.frames[15:65]
             self.active_loop = fwd + fwd[::-1]
             self.resting_frame = self.frames[0]
         elif len(self.frames) >= 140:
-            # Female Anchor: Frame 140 is polite closed-mouth resting pose, frames 85-140 speaking loop
             fwd = self.frames[85:140]
             self.active_loop = fwd + fwd[::-1]
             self.resting_frame = self.frames[140]
@@ -366,13 +346,10 @@ def find_real_anchor_video(gender="female"):
         ]
     for c in candidates:
         if os.path.exists(c) and os.path.getsize(c) > 2000000:
-            logger.info(f"Loaded verified high-res anchor video: {c} ({os.path.getsize(c)} bytes)")
             return c
     for c in candidates:
         if os.path.exists(c) and "pixverse" not in c.lower():
-            logger.info(f"Loaded anchor video candidate: {c}")
             return c
-    logger.warning("No high-res anchor video found. Check if 1000124449.mp4 or anchor_real_female.mp4 is uploaded.")
     return None
 
 # ================= 5. LIVE GLOBAL RSS & STORY CURATION =================
@@ -392,15 +369,43 @@ def _clean_summary(raw):
     t = re.sub(r"\s*-\s*(BBC News|Reuters|The Guardian|AP|Associated Press|Al Jazeera|CNN)$", "", t, flags=re.IGNORECASE)
     return t
 
-def fetch_trending_international_news(category="WORLD", max_stories=5):
+def _get_recent_channel_videos():
+    token = _get_youtube_token()
+    if not token: return []
+    try:
+        headers = {"Authorization": f"Bearer {token}"}
+        r = requests.get("https://www.googleapis.com/youtube/v3/channels?part=contentDetails&mine=true", headers=headers, timeout=8)
+        if r.status_code != 200: return []
+        uploads_id = r.json()["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        r2 = requests.get(f"https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId={uploads_id}&maxResults=10", headers=headers, timeout=8)
+        if r2.status_code != 200: return []
+        titles = [item["snippet"]["title"].lower() for item in r2.json().get("items", [])]
+        return titles
+    except Exception as e:
+        logger.warning(f"Could not fetch recent YouTube titles: {e}")
+        return []
+
+def is_headline_already_uploaded(headline, recent_titles):
+    hl_clean = re.sub(r"[^a-zA-Z0-9\s]", "", headline).lower().split()
+    keywords = [w for w in hl_clean if len(w) > 4][:5]
+    if not keywords: return False
+    for rt in recent_titles:
+        matches = sum(1 for kw in keywords if kw in rt)
+        if matches >= 3:
+            return True
+    return False
+
+def fetch_trending_international_news(category="WORLD", max_stories=5, filter_recent_uploads=False):
     feeds = [
         "https://feeds.bbci.co.uk/news/world/rss.xml",
         "https://feeds.bbci.co.uk/news/business/rss.xml",
         "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
         "https://feeds.bbci.co.uk/news/technology/rss.xml"
     ]
+    recent_titles = _get_recent_channel_videos() if filter_recent_uploads else []
     stories = []
     seen = set()
+
     for fu in feeds:
         try:
             r = requests.get(fu, headers=HEADERS, timeout=6)
@@ -411,6 +416,11 @@ def fetch_trending_international_news(category="WORLD", max_stories=5):
                 title = re.sub(r"\s*-\s*(BBC News|Reuters|The Guardian|AP News|CNN)$", "", title, flags=re.IGNORECASE).strip()
                 if not title or title in seen: continue
                 seen.add(title)
+                
+                if filter_recent_uploads and is_headline_already_uploaded(title, recent_titles):
+                    logger.info(f"Skipping already broadcast story: {title}")
+                    continue
+
                 link = item.findtext("link", "").strip()
                 desc = _clean_summary(item.findtext("description", ""))
                 img_url = _extract_rss_image(item)
@@ -418,7 +428,7 @@ def fetch_trending_international_news(category="WORLD", max_stories=5):
                 stories.append({"headline": title, "summary": desc or title, "article_url": link, "image_url": img_url, "category": cat})
                 if len(stories) >= max_stories * 2: break
         except Exception: pass
-    random.shuffle(stories)
+    
     return stories[:max_stories]
 
 # ================= 6. SPOKEN SCRIPTWRITER & NEURAL VOICE =================
@@ -462,8 +472,10 @@ def synthesize_broadcast_voice(text, output_path, gender="female"):
     cmd = ["edge-tts", "--voice", voice, "--text", text, "--write-media", output_path]
     res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if res.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) < 100:
-        from gtts import gTTS
-        gTTS(text=text, lang="en", tld="co.uk", slow=False).save(output_path)
+        try:
+            from gtts import gTTS
+            gTTS(text=text, lang="en", tld="co.uk", slow=False).save(output_path)
+        except Exception: pass
     return output_path
 
 def create_silence_wav(duration=0.4, output_path="temp/silence.wav"):
@@ -512,7 +524,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
     total_dur = _get_audio_duration(merged_voice)
     bgm_path = generate_pro_broadcast_bed(total_dur)
 
-    # Mastered Broadcast Audio Filter Chain (-13 LUFS Loudness, +1.5dB Treble, Ducking Weights, -shortest)
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
         "-i", merged_voice, "-i", bgm_path,
@@ -533,13 +544,12 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
         story_card = Image.open(sc["image_path"]).convert("RGB")
 
         for f_idx in range(total_scene_frames):
-            # Only animate speaking mouth when speech is actually playing!
             is_speaking = (f_idx < speech_frames)
             frame_img = Image.new("RGB", (W, H), (10, 16, 36))
             anc_frame = anchor_engine.get_frame(global_frame, is_speaking=is_speaking) if anchor_engine else None
 
             if is_short:
-                frame_img.paste(story_card, (0, 104))
+                frame_img.paste(story_card.resize((W, 830), Image.Resampling.LANCZOS), (0, 104))
                 if anc_frame: frame_img.paste(anc_frame, (0, 998))
                 top_bar = Image.new("RGB", (W, 104), (185, 14, 28))
                 tb_draw = ImageDraw.Draw(top_bar)
@@ -553,7 +563,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 dd.text((36, 18), f"● {sc.get('category', 'WORLD')} SPECIAL REPORT", font=_get_font(22, bold=True), fill=(255, 215, 0))
                 frame_img.paste(div_bar, (0, 934))
                 
-                # Shorts Ticker with Masking
                 tick = Image.new("RGB", (W, 80), (8, 12, 24))
                 td = ImageDraw.Draw(tick)
                 td.line([(0, 0), (W, 0)], fill=(185, 14, 28), width=3)
@@ -566,7 +575,7 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 frame_img.paste(tick, (0, H - 80))
             else:
                 if anc_frame: frame_img.paste(anc_frame, (0, 76))
-                frame_img.paste(story_card, (760, 76))
+                frame_img.paste(story_card.resize((1160, 928), Image.Resampling.LANCZOS), (760, 76))
                 dline = ImageDraw.Draw(frame_img)
                 dline.line([(760, 76), (760, 1004)], fill=(185, 14, 28), width=4)
                 dline.line([(764, 76), (764, 1004)], fill=(255, 215, 0), width=2)
@@ -578,7 +587,6 @@ def build_news_video(script_data, scene_assets, output_path, is_short=True):
                 hd.text((W - 180, 24), datetime.now(timezone.utc).strftime("%H:%M UTC"), font=_get_font(24, bold=True), fill=(255, 215, 0))
                 frame_img.paste(hdr, (0, 0))
                 
-                # 16:9 Long Ticker with Masking (Zero Overlap, Zero Blank Gap)
                 tick = Image.new("RGB", (W, 76), (8, 12, 24))
                 td = ImageDraw.Draw(tick)
                 td.line([(0, 0), (W, 0)], fill=(185, 14, 28), width=3)
@@ -622,13 +630,14 @@ def generate_broadcast_thumbnail(headline, category, base_img_path, output_path)
     return output_path
 
 def _sanitize_title(title, is_short=False):
-    t = re.sub(r"\s+", " ", title).strip()
-    max_len = 80 if is_short else 92
+    t = re.sub(r"[<>]", "", title)
+    t = re.sub(r"\s+", " ", t).strip()
+    max_len = 78 if is_short else 88
     if len(t) > max_len:
         t = t[:max_len].rsplit(" ", 1)[0]
     if is_short and "#Shorts" not in t:
         t = f"{t} #Shorts"
-    return t
+    return t[:95].strip()
 
 def generate_viral_metadata(story, edition_title, is_short=False):
     headline = story.get("headline", "").strip()
@@ -658,7 +667,7 @@ Return ONLY valid JSON format:
             if m:
                 data = json.loads(m.group(0))
                 title = _sanitize_title(data.get("title", headline), is_short=is_short)
-                desc = data.get("description", summary)
+                desc = re.sub(r"[<>]", "", data.get("description", summary))
                 tags = data.get("tags", ["WorldNews", "BreakingNews"])
                 return title, desc, tags[:15]
         except Exception as e:
@@ -691,73 +700,123 @@ Stay ahead with 24/7 verified international broadcast coverage from {CHANNEL_NAM
 🔔 Subscribe to @Nexoranewsworld for continuous worldwide news reports.
 
 #WorldNews #BreakingNews #Shorts #{category} #LiveNews #Geopolitics #GlobalCoverage #NexoraNews'''
-    return title, desc, tags[:15]
+    return title, re.sub(r"[<>]", "", desc), tags[:15]
 
 def _get_youtube_token():
-    if not (YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN): return None
+    if not (YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN):
+        logger.error("❌ YouTube OAuth credentials missing! Check GitHub Secrets (YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN).")
+        return None
     try:
         r = requests.post("https://oauth2.googleapis.com/token", data={
             "client_id": YT_CLIENT_ID, "client_secret": YT_CLIENT_SECRET,
             "refresh_token": YT_REFRESH_TOKEN, "grant_type": "refresh_token"
         }, timeout=10)
-        if r.status_code == 200: return r.json().get("access_token")
-    except Exception as e: logger.warning(f"YouTube OAuth refresh error: {e}")
+        if r.status_code == 200:
+            return r.json().get("access_token")
+        else:
+            logger.error(f"❌ YouTube OAuth Refresh Failed ({r.status_code}): {r.text}")
+    except Exception as e:
+        logger.error(f"❌ YouTube OAuth exception: {e}")
     return None
 
 def upload_to_youtube(video_path, title, description, tags, thumbnail_path=None, is_short=False):
     token = _get_youtube_token()
     if not token:
-        logger.info("YouTube credentials not set; saved locally.")
-        return None
-    try:
-        safe_title = _sanitize_title(title, is_short=is_short)
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        meta = {
-            "snippet": {
-                "title": safe_title,
-                "description": description[:4500],
-                "tags": [t[:30] for t in tags[:15]],
-                "categoryId": "25"
-            },
-            "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
-        }
-        res = requests.post("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", headers=headers, json=meta)
-        if res.status_code not in (200, 201):
-            logger.error(f"YouTube video init error {res.status_code}: {res.text}")
-            return None
-        upload_url = res.headers.get("Location")
-        if not upload_url:
-            logger.error(f"No upload location returned: {res.text}")
-            return None
-        with open(video_path, "rb") as f:
-            v_res = requests.put(upload_url, headers={"Authorization": f"Bearer {token}", "Content-Type": "video/mp4"}, data=f)
-        if v_res.status_code not in (200, 201):
-            logger.error(f"YouTube binary upload error {v_res.status_code}: {v_res.text}")
-            return None
-        vid_id = v_res.json().get("id")
-        if vid_id and thumbnail_path and os.path.exists(thumbnail_path):
-            with open(thumbnail_path, "rb") as tf:
-                t_res = requests.post(f"https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={vid_id}", headers={"Authorization": f"Bearer {token}", "Content-Type": "image/jpeg"}, data=tf)
-                if t_res.status_code in (200, 201): logger.info("Custom thumbnail uploaded successfully.")
-        logger.info(f"Successfully uploaded to YouTube: https://youtu.be/{vid_id} (Title: {safe_title})")
-        return vid_id
-    except Exception as e:
-        logger.error(f"YouTube upload error: {e}")
+        logger.error("❌ Aborting upload: Unable to get YouTube Access Token.")
         return None
 
+    if not os.path.exists(video_path) or os.path.getsize(video_path) < 1000:
+        logger.error(f"❌ Video file does not exist or empty: {video_path}")
+        return None
+
+    file_size = os.path.getsize(video_path)
+    safe_title = _sanitize_title(title, is_short=is_short)
+    video_type_str = "SHORTS" if is_short else "LONG BROADCAST"
+    logger.info(f"Initiating YouTube Resumable Upload for [{video_type_str}] (Size: {file_size / (1024*1024):.2f} MB): {safe_title}")
+
+    # Retry loop (up to 3 attempts)
+    for attempt in range(1, 4):
+        try:
+            init_headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Length": str(file_size),
+                "X-Upload-Content-Type": "video/mp4"
+            }
+            meta = {
+                "snippet": {
+                    "title": safe_title,
+                    "description": description[:4500],
+                    "tags": [t[:30] for t in tags[:15]],
+                    "categoryId": "25"
+                },
+                "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
+            }
+            res = requests.post("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", headers=init_headers, json=meta, timeout=15)
+            if res.status_code not in (200, 201):
+                logger.error(f"❌ YouTube Init Error (Attempt {attempt}/3 - HTTP {res.status_code}): {res.text}")
+                time.sleep(4)
+                continue
+
+            upload_url = res.headers.get("Location")
+            if not upload_url:
+                logger.error("❌ No upload Location header returned by YouTube.")
+                time.sleep(4)
+                continue
+
+            # Upload binary data with explicit Content-Length (fixes Long Video upload failure)
+            put_headers = {
+                "Content-Type": "video/mp4",
+                "Content-Length": str(file_size)
+            }
+            with open(video_path, "rb") as f:
+                v_res = requests.put(upload_url, headers=put_headers, data=f, timeout=300)
+
+            if v_res.status_code in (200, 201):
+                vid_id = v_res.json().get("id")
+                logger.info(f"✅ Successfully uploaded {video_type_str}: https://youtu.be/{vid_id} (Title: {safe_title})")
+                
+                # Upload Custom Thumbnail for Long video if provided
+                if vid_id and thumbnail_path and os.path.exists(thumbnail_path):
+                    try:
+                        thumb_size = os.path.getsize(thumbnail_path)
+                        with open(thumbnail_path, "rb") as tf:
+                            requests.post(
+                                f"https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={vid_id}",
+                                headers={"Authorization": f"Bearer {token}", "Content-Type": "image/jpeg", "Content-Length": str(thumb_size)},
+                                data=tf,
+                                timeout=20
+                            )
+                        logger.info("✅ Custom thumbnail attached successfully.")
+                    except Exception as te:
+                        logger.warning(f"Thumbnail upload notice: {te}")
+                return vid_id
+            else:
+                logger.error(f"❌ YouTube Binary Upload Error (Attempt {attempt}/3 - HTTP {v_res.status_code}): {v_res.text}")
+                time.sleep(5)
+        except Exception as e:
+            logger.error(f"❌ Upload exception on attempt {attempt}: {e}")
+            time.sleep(5)
+
+    logger.error(f"❌ All 3 upload attempts failed for {video_type_str}.")
+    return None
+
 # ================= 9. EPISODE ORCHESTRATOR & CLI =================
-def produce_news_episode(video_type="both", category="WORLD", edition="auto", anchor_gender="female", skip_upload=False):
+def produce_news_episode(video_type="both", category="WORLD", edition="auto", anchor_gender="female", skip_upload=False, breaking_check=False):
     if anchor_gender == "auto":
-        # Dynamic TV schedule rotation: alternate by hour between Male & Female anchors
         h = datetime.now(timezone.utc).hour
         anchor_gender = "male" if (h % 2 == 1) else "female"
         
     ed_title, ed_sub = get_current_edition()
     logger.info(f"Starting {CHANNEL_NAME} Broadcast: {ed_title} [{category}] | Anchor: {anchor_gender.upper()}")
-    stories = fetch_trending_international_news(category=category, max_stories=5)
+    
+    stories = fetch_trending_international_news(category=category, max_stories=5, filter_recent_uploads=breaking_check)
     if not stories:
-        logger.error("No stories retrieved.")
+        logger.info("No fresh breaking news stories to broadcast right now. Cycle complete.")
         return
+
+    lead_story = stories[0]
+    logger.info(f"Primary Lead Story: {lead_story['headline']}")
 
     polished = polish_english_bulletin_with_gemini(stories, ed_title, anchor_gender)
     scene_assets = []
@@ -774,7 +833,6 @@ def produce_news_episode(video_type="both", category="WORLD", edition="auto", an
         dur = _get_audio_duration(aud_path)
         scene_assets.append({"headline": st["headline"], "category": st["category"], "image_path": card_path, "audio_path": aud_path, "duration": dur})
 
-    # Outro Call-To-Action (Like, Subscribe, Comment) Anchor Scene
     outro_spoken = (
         f"That concludes this edition of {CHANNEL_NAME}. For 24/7 verified global coverage, don't forget to like this video, subscribe to the channel, and share your thoughts in the comments below. Thank you for watching, and stay safe."
         if video_type != "short"
@@ -796,14 +854,9 @@ def produce_news_episode(video_type="both", category="WORLD", edition="auto", an
     script_data = {"anchor_gender": anchor_gender}
     lead_headline = stories[0]["headline"]
 
-    if video_type in ("both", "short"):
-        short_out = "output/NEXORA_NEWS_SHORT.mp4"
-        build_news_video(script_data, scene_assets[:3], short_out, is_short=True)
-        if not skip_upload:
-            v_title, v_desc, v_tags = generate_viral_metadata(stories[0], ed_title, is_short=True)
-            upload_to_youtube(short_out, v_title, v_desc, v_tags, is_short=True)
-
+    # PRIORITY 1: BUILD & UPLOAD LONG BROADCAST FIRST
     if video_type in ("both", "long"):
+        logger.info("=== GENERATING 16:9 FULL BROADCAST (LONG VIDEO) ===")
         long_out = "output/NEXORA_NEWS_BROADCAST.mp4"
         build_news_video(script_data, scene_assets, long_out, is_short=False)
         thumb_out = "output/thumbnail.jpg"
@@ -813,6 +866,15 @@ def produce_news_episode(video_type="both", category="WORLD", edition="auto", an
             full_desc = f"{v_desc}\n\nBROADCAST BULLETIN STORIES:\n" + "\n".join([f"• {s['headline']}" for s in stories])
             upload_to_youtube(long_out, v_title, full_desc, v_tags, thumbnail_path=thumb_out, is_short=False)
 
+    # PRIORITY 2: BUILD & UPLOAD SHORTS SECOND
+    if video_type in ("both", "short"):
+        logger.info("=== GENERATING 9:16 SHORTS BROADCAST ===")
+        short_out = "output/NEXORA_NEWS_SHORT.mp4"
+        build_news_video(script_data, scene_assets[:3], short_out, is_short=True)
+        if not skip_upload:
+            v_title, v_desc, v_tags = generate_viral_metadata(stories[0], ed_title, is_short=True)
+            upload_to_youtube(short_out, v_title, v_desc, v_tags, is_short=True)
+
     logger.info("Broadcast generation and production complete.")
 
 def main():
@@ -821,11 +883,12 @@ def main():
     p.add_argument("--type", choices=["both", "short", "long"], default="both")
     p.add_argument("--category", default="WORLD")
     p.add_argument("--edition", default="auto")
-    p.add_argument("--anchor", choices=["male", "female", "auto"], default="female")
+    p.add_argument("--anchor", choices=["male", "female", "auto"], default="auto")
     p.add_argument("--skip-upload", action="store_true", help="Skip YouTube upload")
+    p.add_argument("--breaking-check", action="store_true", help="Check and upload only new breaking news")
     args = p.parse_args()
 
-    produce_news_episode(video_type=args.type, category=args.category, edition=args.edition, anchor_gender=args.anchor, skip_upload=args.skip_upload)
+    produce_news_episode(video_type=args.type, category=args.category, edition=args.edition, anchor_gender=args.anchor, skip_upload=args.skip_upload, breaking_check=args.breaking_check)
 
 if __name__ == "__main__":
     main()
