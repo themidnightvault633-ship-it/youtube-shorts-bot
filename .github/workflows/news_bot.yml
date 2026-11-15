@@ -2,9 +2,11 @@ name: 24/7 Nexora News Monetization Engine
 
 on:
   schedule:
-    # Har 30 minute me scan karega
     - cron: '*/30 * * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   broadcast:
@@ -17,7 +19,7 @@ jobs:
       - uses: FedericoCarboni/setup-ffmpeg@v3
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-liberation
+          sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-liberation fonts-noto-core
           pip install -r requirements.txt
       - name: Run Autonomous News Engine
         env:
@@ -27,7 +29,14 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python3 main.py --once --type both --force
+            python3 main.py --once --type auto --force
           else
-            python3 main.py --breaking-check --type both
+            python3 main.py --breaking-check --type auto
           fi
+      - name: Save Broadcast History to Repo (Prevent Duplicates Forever)
+        if: always()
+        run: |
+          git config user.name "NexoraNewsBot"
+          git config user.email "bot@nexoranews.com"
+          git add assets/broadcast_history.json || true
+          git diff --staged --quiet || (git commit -m "chore: update broadcast history [skip ci]" && git pull --rebase origin main && git push)
